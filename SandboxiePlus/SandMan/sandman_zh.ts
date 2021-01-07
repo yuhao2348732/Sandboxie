@@ -1896,7 +1896,7 @@ You can customize the logging using the ini by specifying
 instead of &quot;*&quot;.</source>
         <translation>将驱动程序看到的所有访问事件记录到资源访问日志中.
 
-这些选项设置事件标记到 &quot;*&quot; - 所有访问事件
+这些选项设置事件掩码到 &quot;*&quot; - 所有访问事件
 您可以通过ini来详细定制记录
 &quot;A&quot; - 允许访问
 &quot;D&quot; - 拒绝访问
