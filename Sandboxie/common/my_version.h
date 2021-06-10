@@ -1,6 +1,6 @@
 /*
  * Copyright 2004-2020 Sandboxie Holdings, LLC 
- * Copyright 2020 David Xanatos, xanasoft.com
+ * Copyright 2020-2021 David Xanatos, xanasoft.com
  *
  * This program is free software: you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -21,9 +21,9 @@
 #ifndef _MY_VERSION_H
 #define _MY_VERSION_H
 
-#define MY_VERSION_BINARY       5,45,2
-#define MY_VERSION_STRING       "5.45.2"
-#define MY_VERSION_COMPAT		"5.45.0" // this refers to the driver ABI compatibility
+#define MY_VERSION_BINARY       5,49,8
+#define MY_VERSION_STRING       "5.49.8"
+#define MY_VERSION_COMPAT		"5.49.0" // this refers to the driver ABI compatibility
 
 // These #defines are used by either Resource Compiler, or by NSIC installer
 #define SBIE_INSTALLER_PATH		"..\\Bin\\"

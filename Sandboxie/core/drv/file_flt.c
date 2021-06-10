@@ -363,7 +363,7 @@ _FX FLT_PREOP_CALLBACK_STATUS File_PreOperation(
                 {
                     proc = Process_Find((HANDLE)ulOwnerPid, NULL);  // is this a sandboxed process?
                     if (proc && proc != PROCESS_TERMINATED &&
-                        !proc->m_boolAllowSpoolerPrintToFile)   // if process specifically allowed to use spooler print to file, we can skip everything below
+                        !proc->ipc_allowSpoolerPrintToFile)   // if process specifically allowed to use spooler print to file, we can skip everything below
                     {
                         FLT_FILE_NAME_INFORMATION   *pTargetFileNameInfo = NULL;
                         BOOLEAN     result = FALSE;
@@ -397,7 +397,7 @@ _FX FLT_PREOP_CALLBACK_STATUS File_PreOperation(
                                 WCHAR   wcPid[32];
 
                                 status = STATUS_ACCESS_DENIED;  // disallow the call
-                                swprintf(wcPid, L"[%d]", ulOwnerPid);
+                                RtlStringCbPrintfW(wcPid, sizeof(wcPid), L"[%d]", ulOwnerPid);
 
                                 // create a string for the sandboxed proc name plus the blocked file name (plus a L", " plus NULL = 6)
                                 len = proc->image_name_len + pTargetFileNameInfo->Name.Length + 6;

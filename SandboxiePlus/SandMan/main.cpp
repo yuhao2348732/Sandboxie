@@ -4,7 +4,7 @@
 #include "../QSbieAPI/SbieAPI.h"
 #include "../QtSingleApp/src/qtsingleapplication.h"
 #include "../QSbieAPI/SbieUtils.h"
-#include "../MiscHelpers/Common/qRC4.h"
+//#include "../MiscHelpers/Common/qRC4.h"
 #include "../MiscHelpers/Common/Common.h"
 #include <windows.h>
 
@@ -20,6 +20,7 @@ int main(int argc, char *argv[])
 	//QCoreApplication::setAttribute(Qt::AA_DisableHighDpiScaling);
 
 	QtSingleApplication app(argc, argv);
+	app.setQuitOnLastWindowClosed(false);
 
 	//InitConsole(false);
 

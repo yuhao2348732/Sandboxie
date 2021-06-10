@@ -1,6 +1,6 @@
 /*
  * Copyright 2004-2020 Sandboxie Holdings, LLC 
- * Copyright 2020 David Xanatos, xanasoft.com
+ * Copyright 2020-2021 David Xanatos, xanasoft.com
  *
  * This program is free software: you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -61,7 +61,7 @@ static NTSTATUS Ipc_CheckJobObject(
     PROCESS *proc, void *Object, UNICODE_STRING *Name,
     ACCESS_MASK GrantedAccess);
 
-static NTSTATUS Ipc_CheckObjectName(HANDLE handle);
+static NTSTATUS Ipc_CheckObjectName(HANDLE handle, KPROCESSOR_MODE mode);
 
 
 //---------------------------------------------------------------------------
@@ -201,31 +201,16 @@ _FX BOOLEAN Ipc_Init(void)
     Api_SetFunction(API_SET_LSA_AUTH_PKG,       Ipc_Api_SetLsaAuthPkg);
 #endif ! _WIN64
 
-    if (Driver_OsVersion >= DRIVER_WINDOWS_81) {
-        if (Mem_GetLockResource(&Ipc_Dynamic_Ports[SPOOLER_PORT].pPortLock, TRUE)) {
-            Api_SetFunction(API_GET_SPOOLER_PORT, Ipc_Api_GetSpoolerPortFromPid);
-        }
-        else
-            return FALSE;
-    }
+    Api_SetFunction(API_GET_DYNAMIC_PORT_FROM_PID, Ipc_Api_GetDynamicPortFromPid);
+    Api_SetFunction(API_OPEN_DYNAMIC_PORT, Ipc_Api_OpenDynamicPort);
 
-    if (Driver_OsVersion >= DRIVER_WINDOWS_10) {
-        if (Mem_GetLockResource(&Ipc_Dynamic_Ports[WPAD_PORT].pPortLock, TRUE)) {
-            Api_SetFunction(API_GET_WPAD_PORT, Ipc_Api_GetWpadPortFromPid);
-        }
-        else
-            return FALSE;
-        if (Mem_GetLockResource(&Ipc_Dynamic_Ports[GAME_CONFIG_STORE_PORT].pPortLock, TRUE)) {
-            Api_SetFunction(API_SET_GAME_CONFIG_STORE_PORT, Ipc_Api_SetGameConfigStorePort);
-        }
-        else
-            return FALSE;
-        if (Mem_GetLockResource(&Ipc_Dynamic_Ports[SMART_CARD_PORT].pPortLock, TRUE)) {
-            Api_SetFunction(API_SET_SMART_CARD_PORT, Ipc_Api_SetSmartCardPort);
-        }
-        else
-            return FALSE;
-    }
+    //
+    // prepare dynamic ports
+    //
+    
+    if (!Mem_GetLockResource(&Ipc_Dynamic_Ports.pPortLock, TRUE))
+        return FALSE;
+    List_Init(&Ipc_Dynamic_Ports.Ports);
 
     //
     // finish
@@ -529,6 +514,8 @@ _FX BOOLEAN Ipc_InitPaths(PROCESS *proc)
         L"\\RPC Control\\LSARPC_ENDPOINT",
         L"\\RPC Control\\umpo",
         L"*\\BaseNamedObjects*\\FlipEx*",
+        L"*\\BaseNamedObjects*\\FontCachePort",
+        L"*\\BaseNamedObjects*\\FntCache-*",
         NULL
     };
     static const WCHAR *openpaths_windows8[] = {
@@ -550,6 +537,7 @@ _FX BOOLEAN Ipc_InitPaths(PROCESS *proc)
         L"*\\BaseNamedObjects*\\CoreMessagingRegistrar",
         L"\\RPC Control\\webcache_*",
         L"*\\BaseNamedObjects\\windows_webcache_counters_*",
+        L"*\\BaseNamedObjects\\[CoreUI]-*",
         NULL
     };
 
@@ -587,12 +575,15 @@ _FX BOOLEAN Ipc_InitPaths(PROCESS *proc)
     // add default/built-in open paths
     //
 
-    for (i = 0; openpaths[i] && ok; ++i) {
-        ok = Process_AddPath(proc, &proc->open_ipc_paths, NULL,
-                             TRUE, openpaths[i], FALSE);
+    if (ok) {
+
+        for (i = 0; openpaths[i] && ok; ++i) {
+            ok = Process_AddPath(proc, &proc->open_ipc_paths, NULL,
+                                 TRUE, openpaths[i], FALSE);
+        }
     }
 
-    if (Driver_OsVersion >= DRIVER_WINDOWS_VISTA) {
+    if (ok && Driver_OsVersion >= DRIVER_WINDOWS_VISTA) {
 
         for (i = 0; openpaths_vista[i] && ok; ++i) {
             ok = Process_AddPath(proc, &proc->open_ipc_paths, NULL,
@@ -600,7 +591,7 @@ _FX BOOLEAN Ipc_InitPaths(PROCESS *proc)
         }
     }
 
-    if (Driver_OsVersion >= DRIVER_WINDOWS_7) {
+    if (ok && Driver_OsVersion >= DRIVER_WINDOWS_7) {
 
         for (i = 0; openpaths_windows7[i] && ok; ++i) {
             ok = Process_AddPath(proc, &proc->open_ipc_paths, NULL,
@@ -608,7 +599,7 @@ _FX BOOLEAN Ipc_InitPaths(PROCESS *proc)
         }
     }
 
-    if (Driver_OsVersion >= DRIVER_WINDOWS_8) {
+    if (ok && Driver_OsVersion >= DRIVER_WINDOWS_8) {
 
         for (i = 0; openpaths_windows8[i] && ok; ++i) {
             ok = Process_AddPath(proc, &proc->open_ipc_paths, NULL,
@@ -616,7 +607,7 @@ _FX BOOLEAN Ipc_InitPaths(PROCESS *proc)
         }
     }
 
-    if (Driver_OsVersion >= DRIVER_WINDOWS_10) {
+    if (ok && Driver_OsVersion >= DRIVER_WINDOWS_10) {
 
         for (i = 0; openpaths_windows10[i] && ok; ++i) {
             ok = Process_AddPath(proc, &proc->open_ipc_paths, NULL,
@@ -654,10 +645,19 @@ _FX BOOLEAN Ipc_InitPaths(PROCESS *proc)
     //
 
     proc->ipc_block_password =
-        Conf_Get_Boolean(proc->box->name, L"BlockPassword", 0, TRUE);
+        Conf_Get_Boolean(proc->box->name, L"BlockPassword", 0, TRUE); // OpenLsaSSPI (Security Support Provider Interface)
 
-    proc->m_boolAllowSpoolerPrintToFile = 
+    proc->ipc_open_lsa_endpoint =
+        Conf_Get_Boolean(proc->box->name, L"OpenLsaEndpoint", 0, FALSE);
+
+    proc->ipc_open_sam_endpoint =
+        Conf_Get_Boolean(proc->box->name, L"OpenSamEndpoint", 0, FALSE);
+
+    proc->ipc_allowSpoolerPrintToFile =
         Conf_Get_Boolean(proc->box->name, L"AllowSpoolerPrintToFile", 0, FALSE);
+
+    proc->ipc_openPrintSpooler =
+        Conf_Get_Boolean(proc->box->name, L"OpenPrintSpooler", 0, FALSE);
 
     //
     // if process is launched as a COM server process by DcomLaunch service
@@ -865,36 +865,36 @@ _FX NTSTATUS Ipc_CheckGenericObject(
         //
 
         if (is_open && pattern[0] == L'\\' && pattern[1] == L'K'
-                    && (wcscmp(pattern, L"\\KnownDlls\\*") == 0)) {
+                    && (wcsncmp(pattern, L"\\KnownDlls", 10) == 0)) { // L"\\KnownDlls\\*", L"\\KnownDlls32\\*",
 
             if (GrantedAccess & (DELETE | SECTION_EXTEND_SIZE))
                 status = STATUS_ACCESS_DENIED;
         }
 
+
         else if (!is_open && !is_closed)
         {
-            int i;
-            for (i = 0; i < NUM_DYNAMIC_PORTS; i++)
+            if (Ipc_Dynamic_Ports.pPortLock)
             {
-                if (Ipc_Dynamic_Ports[i].pPortLock)
-                {
-                    KeEnterCriticalRegion();
-                    ExAcquireResourceSharedLite(Ipc_Dynamic_Ports[i].pPortLock, TRUE);
-
-                    if (*Ipc_Dynamic_Ports[i].wstrPortName
-                        && (Name->Length >= 32 * sizeof(WCHAR))
-                        && _wcsicmp(Name->Buffer, Ipc_Dynamic_Ports[i].wstrPortName) == 0)
+                KeEnterCriticalRegion();
+                ExAcquireResourceSharedLite(Ipc_Dynamic_Ports.pPortLock, TRUE);
+        
+                IPC_DYNAMIC_PORT* port = List_Head(&Ipc_Dynamic_Ports.Ports);
+                while (port) 
+                {    
+                    if (_wcsicmp(Name->Buffer, port->wstrPortName) == 0)
                     {
                         // dynamic version of RPC ports, see also ipc_spl.c
                         // and RpcBindingFromStringBindingW in core/dll/rpcrt.c
                         is_open = TRUE;
+                        break;
                     }
 
-                    ExReleaseResourceLite(Ipc_Dynamic_Ports[i].pPortLock);
-                    KeLeaveCriticalRegion();
-                    if (is_open)
-                        break;
+                    port = List_Next(port);
                 }
+        
+                ExReleaseResourceLite(Ipc_Dynamic_Ports.pPortLock);
+                KeLeaveCriticalRegion();
             }
         }
 
@@ -933,14 +933,23 @@ _FX NTSTATUS Ipc_CheckGenericObject(
         }
 
         if (letter) {
-            swprintf(access_str, L"(I%c) %08X", letter, GrantedAccess);
-            Log_Debug_Msg(MONITOR_IPC, access_str, Name->Buffer);
+
+            ULONG mon_type = MONITOR_IPC;
+            if (!IsBoxedPath) {
+                if (NT_SUCCESS(status))
+                    mon_type |= MONITOR_OPEN;
+                else
+                    mon_type |= MONITOR_DENY;
+            }
+
+            RtlStringCbPrintfW(access_str, sizeof(access_str), L"(I%c) %08X", letter, GrantedAccess);
+            Log_Debug_Msg(mon_type, access_str, Name->Buffer);
         }
     }
 
-    if (Session_MonitorCount) {
+    else if (Session_MonitorCount) {
 
-        USHORT mon_type = MONITOR_IPC;
+        ULONG mon_type = MONITOR_IPC;
         WCHAR *mon_name = Name->Buffer;
         if (IsBoxedPath)
             mon_name += proc->box->ipc_path_len / sizeof(WCHAR) - 1;
@@ -992,6 +1001,7 @@ _FX NTSTATUS Ipc_CheckJobObject(
     // is inside the sandbox
     //
 
+    if (!Conf_Get_Boolean(proc->box->name, L"NoAddProcessToJob", 0, FALSE))
     if (GrantedAccess & (JOB_OBJECT_ASSIGN_PROCESS | JOB_OBJECT_TERMINATE))
         return STATUS_ACCESS_DENIED;
 
@@ -1016,7 +1026,7 @@ _FX NTSTATUS Ipc_Api_DuplicateObject(PROCESS *proc, ULONG64 *parms)
     HANDLE SourceHandle;
     HANDLE TargetProcessHandle;
     HANDLE *TargetHandle;
-    HANDLE TargetHandleValue;
+    HANDLE TestHandle;
     ULONG DesiredAccess;
     ULONG HandleAttributes;
     ULONG Options;
@@ -1133,15 +1143,7 @@ _FX NTSTATUS Ipc_Api_DuplicateObject(PROCESS *proc, ULONG64 *parms)
 
     if (IS_ARG_CURRENT_PROCESS(SourceProcessHandle)) {
 
-        status = Ipc_CheckObjectName(SourceHandle);
-
-        if (NT_SUCCESS(status)) {
-
-            status = NtDuplicateObject(
-                SourceProcessHandle, SourceHandle,
-                TargetProcessHandle, TargetHandle,
-                DesiredAccess, HandleAttributes, Options);
-        }
+        status = Ipc_CheckObjectName(SourceHandle, UserMode);
 
     //
     // if the source handle is in another process, we have to duplicate
@@ -1151,40 +1153,38 @@ _FX NTSTATUS Ipc_Api_DuplicateObject(PROCESS *proc, ULONG64 *parms)
 
     } else if (IS_ARG_CURRENT_PROCESS(TargetProcessHandle)) {
 
-        status = NtDuplicateObject(
+        //
+        // we duplicate the handle into kernel space such that that user 
+        // wont be able to grab it while we are evaluaiting it
+        //
+
+        status = ZwDuplicateObject(
                         SourceProcessHandle, SourceHandle,
-                        TargetProcessHandle, TargetHandle,
+                        TargetProcessHandle, &TestHandle,
                         DesiredAccess, HandleAttributes,
                         Options & ~DUPLICATE_CLOSE_SOURCE);
 
-        TargetHandleValue = *TargetHandle;
-        *TargetHandle = NULL;
-
         if (NT_SUCCESS(status)) {
 
-            status = Ipc_CheckObjectName(TargetHandleValue);
+            status = Ipc_CheckObjectName(TestHandle, KernelMode);
 
-            if (! NT_SUCCESS(status))
-                NtClose(TargetHandleValue);
+            ZwClose(TestHandle);
         }
-
-        if (NT_SUCCESS(status) && (Options & DUPLICATE_CLOSE_SOURCE)) {
-
-            NtClose(TargetHandleValue);
-
-            status = NtDuplicateObject(
-                SourceProcessHandle, SourceHandle,
-                TargetProcessHandle, TargetHandle,
-                DesiredAccess, HandleAttributes, Options);
-
-            TargetHandleValue = *TargetHandle;
-        }
-
-        if (NT_SUCCESS(status))
-            *TargetHandle = TargetHandleValue;
 
     } else
         status = STATUS_INVALID_HANDLE;
+
+    //
+    // if all checks were passed duplicate the handle
+    //
+
+    if (NT_SUCCESS(status)) {
+
+        status = NtDuplicateObject(
+            SourceProcessHandle, SourceHandle,
+            TargetProcessHandle, TargetHandle,
+            DesiredAccess, HandleAttributes, Options);
+    }
 
     //
     // end exception block and close OtherProcessHandle
@@ -1205,7 +1205,7 @@ _FX NTSTATUS Ipc_Api_DuplicateObject(PROCESS *proc, ULONG64 *parms)
 //---------------------------------------------------------------------------
 
 
-_FX NTSTATUS Ipc_CheckObjectName(HANDLE handle)
+_FX NTSTATUS Ipc_CheckObjectName(HANDLE handle, KPROCESSOR_MODE mode)
 {
     NTSTATUS status;
     OBJECT_TYPE *object;
@@ -1213,7 +1213,7 @@ _FX NTSTATUS Ipc_CheckObjectName(HANDLE handle)
     WCHAR *TypeBuffer;
 
     status = ObReferenceObjectByHandle(
-                    handle, 0, NULL, UserMode, &object, NULL);
+                    handle, 0, NULL, mode, &object, NULL);
 
     if (! NT_SUCCESS(status))
         return status;
@@ -1635,11 +1635,6 @@ _FX NTSTATUS Ipc_Api_QuerySymbolicLink(PROCESS *proc, ULONG64 *parms)
 
 _FX void Ipc_Unload(void)
 {
-    int i;
-
-    for (i = 0; i < NUM_DYNAMIC_PORTS; i++)
-    {
-        if (Ipc_Dynamic_Ports[i].pPortLock)
-            Mem_FreeLockResource(&Ipc_Dynamic_Ports[i].pPortLock);
-    }
+    if (Ipc_Dynamic_Ports.pPortLock)
+        Mem_FreeLockResource(&Ipc_Dynamic_Ports.pPortLock);
 }

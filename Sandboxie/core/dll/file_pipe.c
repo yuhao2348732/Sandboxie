@@ -292,7 +292,7 @@ _FX const BOOLEAN File_InternetBlockade_ManualBypass()
 		Dll_Free(rpl);
 	}
 	else if(SbieApi_QueryConfBool(NULL, L"NotifyInternetAccessDenied", TRUE))
-		SbieApi_Log(1307, L"%s [%s]", Dll_ImageName, Dll_BoxName);
+		SbieApi_Log(1307, L"%S [%S]", Dll_ImageName, Dll_BoxName);
 
 	//
 	// Note: the granting process must notify the driver about the exemption 
@@ -675,7 +675,7 @@ _FX NTSTATUS File_NtCreateFilePipe(
         status == STATUS_OBJECT_NAME_NOT_FOUND ||
         status == STATUS_OBJECT_PATH_NOT_FOUND) {
 
-        USHORT monflag = MONITOR_PIPE;
+        ULONG monflag = MONITOR_PIPE;
         if (status == STATUS_ACCESS_DENIED)
             monflag |= MONITOR_DENY;
         SbieApi_MonitorPut(monflag, TruePath);
@@ -1279,7 +1279,7 @@ _FX NTSTATUS File_WaitNamedPipe(
 
             if (mp_flags) {
 
-                USHORT monflag = MONITOR_PIPE;
+                ULONG monflag = MONITOR_PIPE;
                 if (PATH_IS_CLOSED(mp_flags))
                     monflag |= MONITOR_DENY;
                 else

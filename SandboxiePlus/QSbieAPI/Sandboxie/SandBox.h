@@ -50,12 +50,15 @@ public:
 
 	virtual int						GetActiveProcessCount() const { return m_ActiveProcessCount; }
 
-	virtual SB_STATUS				RunStart(const QString& Command);
+	virtual SB_STATUS				RunStart(const QString& Command, bool Elevated = false);
 	virtual SB_STATUS				RunSandboxed(const QString& Command);
 	virtual SB_STATUS				TerminateAll();
 
 	virtual void					CloseBox() {}
 
+	virtual bool					IsEnabled() const  { return m_IsEnabled; }
+
+	virtual bool					IsEmpty() const;
 	virtual SB_PROGRESS				CleanBox();
 	virtual SB_STATUS				RenameBox(const QString& NewName);
 	virtual SB_STATUS				RemoveBox();
@@ -80,7 +83,9 @@ protected:
 	QString							m_FilePath;
 	QString							m_RegPath;
 	QString							m_IpcPath;
-
+	
+	bool							m_IsEnabled;
+	
 	QMap<quint32, CBoxedProcessPtr>	m_ProcessList;
 	int								m_ActiveProcessCount;
 

@@ -67,6 +67,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='SbieDebug|Win32'">
     <ClCompile>
       <ExceptionHandling>Sync</ExceptionHandling>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Lib>
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
@@ -75,6 +76,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='SbieRelease|Win32'">
     <ClCompile>
       <ExceptionHandling>Sync</ExceptionHandling>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Lib>
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
@@ -83,6 +85,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='SbieDebug|x64'">
     <ClCompile>
       <ExceptionHandling>Sync</ExceptionHandling>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Lib>
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
@@ -91,6 +94,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='SbieRelease|x64'">
     <ClCompile>
       <ExceptionHandling>Sync</ExceptionHandling>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Lib>
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
@@ -99,6 +103,7 @@
   <ItemGroup>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\..\common\my_ntdll.c" />
     <ClCompile Include="BoxOrder.c" />
     <ClCompile Include="DlgTmplRtl.cpp" />
     <ClCompile Include="MyFileOp.c" />
@@ -106,7 +111,9 @@
     <ClCompile Include="MyMsgBox.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\common\my_shlwapi.h" />
     <ClInclude Include="..\..\common\my_version.h" />
+    <ClInclude Include="..\..\common\my_xeb.h" />
     <ClInclude Include="BoxOrder.h" />
     <ClInclude Include="CommonUtils.h" />
     <ClInclude Include="MyGdi.h" />

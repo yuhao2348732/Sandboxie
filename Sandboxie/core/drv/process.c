@@ -1,6 +1,6 @@
 /*
  * Copyright 2004-2020 Sandboxie Holdings, LLC 
- * Copyright 2020 David Xanatos, xanasoft.com
+ * Copyright 2020-2021 David Xanatos, xanasoft.com
  *
  * This program is free software: you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -695,6 +695,7 @@ _FX PROCESS *Process_Create(
     // initialize trace flags
     //
 
+    proc->call_trace = Process_GetTraceFlag(proc, L"CallTrace");
     proc->file_trace = Process_GetTraceFlag(proc, L"FileTrace");
     proc->pipe_trace = Process_GetTraceFlag(proc, L"PipeTrace");
     proc->key_trace  = Process_GetTraceFlag(proc, L"KeyTrace");
@@ -786,10 +787,16 @@ _FX void Process_NotifyProcess(
 
         if (Create) {
 
-            if (ParentId) {
+            //
+            // it is possible to specify the parrent process when calling RtlCreateUserProcess
+            // this is for example done by the appinfo service running under svchost.exe
+            // to start LocalBridge.exe with RuntimeBroker.exe as parent
+            // hence we take for our purposes the ID of the process calling RtlCreateUserProcess instead
+            //
 
-                Process_NotifyProcess_Create(ProcessId, ParentId, NULL);
-            }
+            //DbgPrint("Process_NotifyProcess_Create pid=%d parent=%d current=%d\n", ProcessId, ParentId, PsGetCurrentProcessId());
+            
+            Process_NotifyProcess_Create(ProcessId, ParentId, PsGetCurrentProcessId(), NULL);
 
         } else {
 
@@ -805,7 +812,7 @@ _FX void Process_NotifyProcess(
 
 
 _FX void Process_NotifyProcess_Create(
-    HANDLE ProcessId, HANDLE ParentId, BOX *box)
+    HANDLE ProcessId, HANDLE ParentId, HANDLE CallerId, BOX *box)
 {
     void *nbuf1, *nbuf2;
     ULONG nlen1, nlen2;
@@ -868,7 +875,34 @@ _FX void Process_NotifyProcess_Create(
         BOOLEAN added_to_dfp_list = FALSE;
         BOOLEAN check_forced_program = FALSE;
 
-        PROCESS *parent_proc = Process_Find(ParentId, &irql);
+        //
+        // there are a couple of scenarios here
+        // a. CallerId == ParentId boring, all's fine
+        // b. Caller is sandboxed designated Parent is NOT sandboxed, 
+        //      possible sandbox escape atempt
+        // c. Caller is not sandboxed, designated Parent IS sandboxed, 
+        //      service trying to start something on the behalf of a sandboxed process 
+        //      eg. seclogon reacting to a runas request 
+        //      in which case the created process must be sandboxed to
+        //
+
+        PROCESS *parent_proc = Process_Find(CallerId, &irql);
+        if (!(parent_proc && !parent_proc->bHostInject) && CallerId != ParentId) {
+            
+            //
+            // release lock on process list
+            //
+
+            ExReleaseResourceLite(Process_ListLock);
+            KeLowerIrql(irql);
+
+            //
+            // Process_Find will lock process list again
+            //
+
+            parent_proc = Process_Find(ParentId, &irql);
+        }
+
         if (parent_proc && !parent_proc->bHostInject) {
 
             //
@@ -1020,7 +1054,8 @@ _FX void Process_NotifyProcess_Create(
             if (! bHostInject)
             {
 				WCHAR msg[48], *buf = msg;
-				buf += swprintf(buf, L"%s%c%d", new_proc->box->name, L'\0', (ULONG)ParentId) + 1;
+				RtlStringCbPrintfW(buf, sizeof(msg), L"%s%c%d", new_proc->box->name, L'\0', (ULONG)ParentId);
+                buf += wcslen(buf) + 1;
 				Log_Popup_MsgEx(MSG_1399, new_proc->image_path, wcslen(new_proc->image_path), msg, (ULONG)(buf - msg), new_proc->box->session_id, ProcessId);
 
                 if (! add_process_to_job)

@@ -1,6 +1,6 @@
 /*
  * Copyright 2004-2020 Sandboxie Holdings, LLC 
- * Copyright 2020 David Xanatos, xanasoft.com
+ * Copyright 2020-2021 David Xanatos, xanasoft.com
  *
  * This program is free software: you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -403,7 +403,7 @@ _FX void File_CreateBoxPath_2(HANDLE FileHandle)
         File_DesktopIniText = Mem_Alloc(Driver_Pool, 768);
         if (File_DesktopIniText) {
 
-            sprintf(File_DesktopIniText,
+            RtlStringCbPrintfA(File_DesktopIniText, 768, 
                         "[.ShellClassInfo]\r\n"
                         "IconFile=%S\\%S\r\n"
                         "IconIndex=9\r\n"
@@ -610,7 +610,7 @@ _FX BOOLEAN File_InitPaths(PROCESS *proc,
         L"\\Device\\NamedPipe\\XTIERRPCPIPE",       // Novell NetIdentity
         NULL
     };
-    static const WCHAR *strClosedFiles[] = {
+    static const WCHAR *strWinRMFiles[] = {
         // Windows Remote Management (WinRM) is a large security hole.  A sandboxed app running in an elevated cmd shell can send any admin command to the host.
         // Block the WinRS.exe and the automation dlls to make it very difficult for someone to use.
         // See ICD-10136 "Sandboxie security hole allows guest to run any command in host as admin"
@@ -618,6 +618,11 @@ _FX BOOLEAN File_InitPaths(PROCESS *proc,
         L"%SystemRoot%\\System32\\wsmsvc.dll",
         L"%SystemRoot%\\System32\\wsmauto.dll",
         L"%SystemRoot%\\System32\\winrs.exe",
+        // Don't forget the WoW64 files
+        L"%SystemRoot%\\SysWoW64\\wsmsvc.dll",
+        L"%SystemRoot%\\SysWoW64\\wsmauto.dll",
+        L"%SystemRoot%\\SysWoW64\\winrs.exe",
+        // Note: This is not a proper fix its just a cheap mitidation!!! 
         NULL
     };
 
@@ -676,8 +681,9 @@ _FX BOOLEAN File_InitPaths(PROCESS *proc,
         }
     }
 
-    for (i = 0; strClosedFiles[i] && ok; ++i) {
-        ok = Process_AddPath(proc, closed_file_paths, _ClosedPath, TRUE, strClosedFiles[i], FALSE);
+    if(Conf_Get_Boolean(proc->box->name, L"BlockWinRM", 0, TRUE))
+    for (i = 0; strWinRMFiles[i] && ok; ++i) {
+        ok = Process_AddPath(proc, closed_file_paths, _ClosedPath, TRUE, strWinRMFiles[i], FALSE);
     }
 
     if (! ok) {
@@ -879,6 +885,8 @@ _FX BOOLEAN File_InitProcess(PROCESS *proc)
                     proc->box->name, L"NotifyDirectDiskAccess", 0, FALSE);
     }
 
+    proc->file_open_devapi_cmapi = Conf_Get_Boolean(proc->box->name, L"OpenDevCMApi", 0, FALSE);
+
     if (ok && proc->image_path && (! proc->image_sbie)) {
 
         //
@@ -988,13 +996,13 @@ _FX NTSTATUS File_Generic_MyParseProc(
             ignore_str = Mem_Alloc(proc->pool, ignore_str_len);
             if (ignore_str) {
 
-                swprintf(ignore_str,
+                RtlStringCbPrintfW(ignore_str, ignore_str_len,
                     L"(FI) %08X %s", device_type, device_name_ptr);
 
                 if (proc->file_trace & TRACE_IGNORE)
                     Log_Debug_Msg(MONITOR_IGNORE, ignore_str, Driver_Empty);
 
-                if (Session_MonitorCount &&
+                else if (Session_MonitorCount &&
                         device_type != FILE_DEVICE_PHYSICAL_NETCARD)
                     Session_MonitorPut(MONITOR_IGNORE, ignore_str + 4, proc->pid);
 
@@ -1492,16 +1500,27 @@ skip_due_to_home_folder:
             letter = 0;
 
         if (letter) {
-            swprintf(access_str, L"(F%c) %08X.%02X.%08X",
+
+            ULONG mon_type = IsPipeDevice ? MONITOR_PIPE : MONITOR_FILE;
+            if (!IsBoxedPath) {
+                if (ShouldMonitorAccess == TRUE)
+                    mon_type |= MONITOR_DENY;
+                else
+                    mon_type |= MONITOR_OPEN;
+            }
+            if(!IsPipeDevice && !ShouldMonitorAccess)
+                mon_type |= MONITOR_TRACE;
+
+            RtlStringCbPrintfW(access_str, sizeof(access_str), L"(F%c) %08X.%02X.%08X",
                 letter, DesiredAccess,
                 CreateDisposition & 0x0F, CreateOptions);
-            Log_Debug_Msg(IsPipeDevice ? MONITOR_PIPE : MONITOR_FILE_OR_KEY, access_str, Name->Name.Buffer);
+            Log_Debug_Msg(mon_type, access_str, Name->Name.Buffer);
         }
     }
 
-    if (IsPipeDevice && Session_MonitorCount) {
+    else if (IsPipeDevice && Session_MonitorCount) {
 
-        USHORT mon_type = MONITOR_PIPE;
+        ULONG mon_type = MONITOR_PIPE;
         WCHAR *mon_name = Name->Name.Buffer;
 
         if (MonitorPrefixLen && MonitorSuffixPtr) {
@@ -1515,9 +1534,12 @@ skip_due_to_home_folder:
 
     } else if (ShouldMonitorAccess) {
 
-        Session_MonitorPut(MONITOR_FILE_OR_KEY | MONITOR_DENY, Name->Name.Buffer, proc->pid);
+        Session_MonitorPut(MONITOR_FILE | MONITOR_DENY, Name->Name.Buffer, proc->pid);
 
-    } else if (msg1313 && status == STATUS_ACCESS_DENIED
+    } 
+    
+    if (!ShouldMonitorAccess && msg1313 
+                       && status == STATUS_ACCESS_DENIED
                        && device_type == FILE_DEVICE_DISK
                        && RemainingName && RemainingName->Length == 0) {
 
@@ -2207,6 +2229,35 @@ _FX NTSTATUS File_Api_Open(PROCESS *proc, ULONG64 *parms)
         DesiredAccess  = FILE_READ_ATTRIBUTES | SYNCHRONIZE;
         CreateOptions |= FILE_DIRECTORY_FILE;
     }
+
+    if (proc->file_trace & (TRACE_ALLOW | TRACE_DENY)) {
+
+        WCHAR access_str[48];
+        WCHAR letter;
+
+        if (is_closed && (proc->file_trace & TRACE_DENY))
+            letter = L'D';
+        else if (proc->file_trace & TRACE_ALLOW)
+            letter = L'A';
+        else
+            letter = 0;
+
+        if (letter) {
+
+            ULONG mon_type = MONITOR_FILE;
+            mon_type |= MONITOR_TRACE;
+
+            RtlStringCbPrintfW(access_str, sizeof(access_str), L"(F%c) %08X.%02X.%08X",
+                letter, DesiredAccess,
+                0 & 0x0F, CreateOptions);
+            Log_Debug_Msg(mon_type, access_str, path);
+        }
+    }
+    else if (is_closed) {
+
+        Session_MonitorPut(MONITOR_FILE | MONITOR_DENY, path, proc->pid);
+    }
+
 
     //
     // for a named pipe in the sandbox, use other parameters for the

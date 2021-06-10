@@ -1,6 +1,6 @@
 /*
  * Copyright 2004-2020 Sandboxie Holdings, LLC 
- * Copyright 2020 David Xanatos, xanasoft.com
+ * Copyright 2020-2021 David Xanatos, xanasoft.com
  *
  * This program is free software: you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@
 #include "api.h"
 #include "util.h"
 #include "common/my_version.h"
+#include "session.h"
 
 
 //---------------------------------------------------------------------------
@@ -190,7 +191,7 @@ _FX BOOLEAN Token_Init(void)
     MySetPrivilege(3) = SE_SHUTDOWN_PRIVILEGE;
     MySetPrivilege(4) = SE_DEBUG_PRIVILEGE;
     MySetPrivilege(5) = SE_SYSTEMTIME_PRIVILEGE;
-    MySetPrivilege(6) = SE_TIME_ZONE_PRIVILEGE;
+    MySetPrivilege(6) = SE_TIME_ZONE_PRIVILEGE; // vista
 
 #undef MySetPrivilege
 
@@ -481,6 +482,15 @@ _FX void *Token_FilterPrimary(PROCESS *proc, void *ProcessObject)
         Conf_Get_Boolean(proc->box->name, L"DropAdminRights", 0, FALSE);
 
     DropRights = (proc->drop_rights ? -1 : 0);
+
+    //
+    // special allowance for MSIServer - it does not seem to be needed with the CreateWaitableTimerW hook
+    //
+    //if (DropRights && !proc->image_from_box && _wcsicmp(proc->image_name, L"msiexec.exe") == 0
+    //    && Conf_Get_Boolean(proc->box->name, L"MsiInstallerExemptions", 0, FALSE)) 
+    //{
+    //    DropRights = 0;
+    //}
 
     // DbgPrint("   Drop rights %d - %d <%S>\n", proc->drop_rights, proc->pid, proc->image_name);
 
@@ -818,6 +828,11 @@ _FX void *Token_Restrict(
     TOKEN_USER *user;
     void *NewTokenObject = NULL;
 	
+    /*if (Conf_Get_Boolean(proc->box->name, L"CreateToken", 0, FALSE))
+    {
+        
+    }*/
+
 	// OpenToken BEGIN
 	if (Conf_Get_Boolean(proc->box->name, L"OpenToken", 0, FALSE) || Conf_Get_Boolean(proc->box->name, L"UnrestrictedToken", 0, FALSE)) {
 
@@ -1232,7 +1247,19 @@ _FX void *Token_RestrictHelper1(
 
 				PSID NewSid = NULL;
 
-				// SbieLogin BEGIN
+                //
+                // Alternative (less secure) workaround for msi issue started with windows 17763
+                // the workaround in Proc_CreateProcessInternalW_RS5 makes solves thsi usse well
+                //
+                //if (!proc->image_from_box && _wcsicmp(proc->image_name, L"msiexec.exe") == 0
+                //    && RtlEqualSid(SidInToken, SystemLogonSid)
+                //    && Conf_Get_Boolean(proc->box->name, L"MsiInstallerExemptions", 0, FALSE))
+                //{
+                //    //DbgPrint("Sbie, MsiServer was allowed to keep its system token\n");
+                //}
+                //else
+                
+                // SbieLogin BEGIN
 				if (Conf_Get_Boolean(proc->box->name, L"SandboxieLogon", 0, FALSE))
 				{
 					if (SandboxieLogonSid[0] != 0)
@@ -1552,6 +1579,8 @@ _FX NTSTATUS Token_AssignPrimaryHandle(
     // on Windows Vista and later, we need to clear the PrimaryTokenFrozen
     // bit in the EPROCESS structure before we can replace the primary token
 
+    // Hard Offset Dependency
+
     // dt nt!_eprocess
 
     if (Driver_OsVersion >= DRIVER_WINDOWS_VISTA) {
@@ -1640,6 +1669,10 @@ _FX NTSTATUS Token_AssignPrimaryHandle(
             }
 
         }
+
+        /*WCHAR msg[256];
+		swprintf(msg, L"BAM: Flags2_Offset=%d MitigationFlags_Offset=%d SignatureLevel_Offset=%d\n", Flags2_Offset, MitigationFlags_Offset, SignatureLevel_Offset);
+		Session_MonitorPut(MONITOR_OTHER, msg, PsGetCurrentProcessId());*/
 
 #endif _WIN64
 

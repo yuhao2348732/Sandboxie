@@ -46,7 +46,7 @@ public:
 			pHelp->setText(tr("?"));
 			pHelp->setToolTip(tr("Visit %1 for a detailed explanation.").arg(QString("https://sandboxie-plus.com/go.php?to=sbie-sbie%1/").arg(GetMsgId())));
 			pHelp->setMaximumWidth(16);
-			QObject::connect(pHelp, SIGNAL(pressed()), this, SLOT(OnHelp()));
+			QObject::connect(pHelp, SIGNAL(clicked(bool)), this, SLOT(OnHelp()));
 			m_pMainLayout->addWidget(pHelp, 0, 1);
 
 
@@ -58,7 +58,7 @@ public:
 			pMenu->addAction(tr("Hide all such messages"), this, SIGNAL(Hide()));
 			pDismiss->setMenu(pMenu);
 			//QObject::connect(pDismiss, SIGNAL(triggered(QAction*)), , SLOT());
-			QObject::connect(pDismiss, SIGNAL(pressed()), this, SIGNAL(Dismiss()));
+			QObject::connect(pDismiss, SIGNAL(clicked(bool)), this, SIGNAL(Dismiss()));
 			m_pMainLayout->addWidget(pDismiss, 0, 2);
 		}
 	}
@@ -89,6 +89,7 @@ public:
 		m_RequestId = RequestId;
 		m_Result = Result;
 		m_pProcess = pProcess;
+		m_bAddToList = false;
 
 		m_pLabel = new QLabel(Message);
 		m_pLabel->setToolTip(Message);
@@ -106,17 +107,17 @@ public:
 
 		m_pYes = new QToolButton();
 		m_pYes->setText(tr("Yes"));
-		connect(m_pYes, SIGNAL(pressed()), this, SLOT(OnAccepted()));
+		connect(m_pYes, SIGNAL(clicked(bool)), this, SLOT(OnAccepted()));
 		m_pMainLayout->addWidget(m_pYes, 1, 2);
 
 		m_pNo = new QToolButton();
 		m_pNo->setText(tr("No"));
-		connect(m_pNo, SIGNAL(pressed()), this, SLOT(OnRejected()));
+		connect(m_pNo, SIGNAL(clicked(bool)), this, SLOT(OnRejected()));
 		m_pMainLayout->addWidget(m_pNo, 1, 3);
 
 		m_pTerminate = new QToolButton();
 		m_pTerminate->setText(tr("Terminate"));
-		connect(m_pTerminate, SIGNAL(pressed()), this, SLOT(OnTerminate()));
+		connect(m_pTerminate, SIGNAL(clicked(bool)), this, SLOT(OnTerminate()));
 		m_pMainLayout->addWidget(m_pTerminate, 1, 4);
 
 
@@ -132,10 +133,19 @@ public:
 			killTimer(m_uTimerID);
 	}
 
+	void AddAddToList()
+	{
+		m_pYes->setPopupMode(QToolButton::MenuButtonPopup);
+		QMenu* pMenu = new QMenu();
+		pMenu->addAction(tr("Yes and add to allowed programs"), this, SLOT(OnAcceptedAlways()));
+		m_pYes->setMenu(pMenu);
+	}
+
 signals:
 	void		PromptResult(int retval);
 
 private slots:
+	void		OnAcceptedAlways() { m_bAddToList = true; emit PromptResult(1); }
 	void		OnAccepted() { emit PromptResult(1); }
 	void		OnRejected() { emit PromptResult(0); }
 	void		OnTerminate() { emit PromptResult(-1); }
@@ -190,6 +200,7 @@ protected:
 	quint32				m_RequestId;
 	QVariantMap			m_Result;
 	CBoxedProcessPtr	m_pProcess;
+	bool				m_bAddToList;
 
 	QLabel*				m_pLabel;
 	QCheckBox*			m_pRemember;
@@ -245,7 +256,7 @@ public:
 		pRecMenu->addAction(tr("Open file recovery for this box"), this, SIGNAL(OpenRecovery()));
 		pRecover->setMenu(pRecMenu);
 		//QObject::connect(pRecover, SIGNAL(triggered(QAction*)), , SLOT());
-		QObject::connect(pRecover, SIGNAL(pressed()), this, SLOT(OnRecover()));
+		QObject::connect(pRecover, SIGNAL(clicked(bool)), this, SLOT(OnRecover()));
 		m_pMainLayout->addWidget(pRecover, 2, 2);
 
 
@@ -258,7 +269,7 @@ public:
 		pMenu->addAction(tr("Disable quick recovery until the box restarts"), this, SLOT(OnDisable()));
 		pDismiss->setMenu(pMenu);
 		//QObject::connect(pDismiss, SIGNAL(triggered(QAction*)), , SLOT());
-		QObject::connect(pDismiss, SIGNAL(pressed()), this, SIGNAL(Dismiss()));
+		QObject::connect(pDismiss, SIGNAL(clicked(bool)), this, SIGNAL(Dismiss()));
 		m_pMainLayout->addWidget(pDismiss, 2, 3);
 	}
 
@@ -348,7 +359,7 @@ public:
 		//pMenu->addAction(tr("Hide this progress for this process"), this, SIGNAL(Hide()));
 		//pDismiss->setMenu(pMenu);
 		//QObject::connect(pDismiss, SIGNAL(triggered(QAction*)), , SLOT());
-		QObject::connect(pDismiss, SIGNAL(pressed()), this, SIGNAL(Dismiss()));
+		QObject::connect(pDismiss, SIGNAL(clicked(bool)), this, SIGNAL(Dismiss()));
 		m_pMainLayout->addWidget(pDismiss, 1, 2);
 
 		m_iTimeOutSec = 5;

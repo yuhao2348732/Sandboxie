@@ -187,7 +187,7 @@ _FX BOOLEAN Gui_InitMisc(void)
     // Chinese instant messenger QQ.exe (aka TM.exe) uses OpenInputDesktop,
     // GetThreadDesktop and GetUserObjectInformation to determine if the
     // desktop is locked, and if OpenInputDesktop fails, it assumes lock.
-    // fortunately it is enough to hook just OpenInputDesktop to fix this
+    // Fortunately it is enough to hook just OpenInputDesktop to fix this
     //
     // Google Chrome also uses OpenInputDesktop and GetUserObjectInformation
     // to check if the desktop is locked, and other programs might as well
@@ -1202,7 +1202,7 @@ _FX LONG Gui_GetRawInputDeviceInfo_impl(
     GUI_GET_RAW_INPUT_DEVICE_INFO_REQ* req;
     GUI_GET_RAW_INPUT_DEVICE_INFO_RPL* rpl;
 
-    // Note: pcbSize seams to be in tchars not in bytes!
+    // Note: pcbSize seems to be in tchars not in bytes!
     ULONG lenData = 0;
     if (pData && pcbSize)
         lenData = (*pcbSize) * (bUnicode ? sizeof(WCHAR) : 1);
@@ -1213,7 +1213,7 @@ _FX LONG Gui_GetRawInputDeviceInfo_impl(
     LPVOID reqData = (BYTE*)req + sizeof(GUI_GET_RAW_INPUT_DEVICE_INFO_REQ);
 
     req->msgid = GUI_GET_RAW_INPUT_DEVICE_INFO;
-    req->hDevice = hDevice;
+    req->hDevice = (ULONG64)hDevice;
     req->uiCommand = uiCommand;
     req->unicode = bUnicode;
     if (lenData) {

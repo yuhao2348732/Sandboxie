@@ -12,7 +12,7 @@ public:
     CSbieModel(QObject *parent = 0);
 	~CSbieModel();
 
-	QList<QVariant>	Sync(const QMap<QString, CSandBoxPtr>& BoxList, const QMap<QString, QStringList>& Groups = QMap<QString, QStringList>());
+	QList<QVariant>	Sync(const QMap<QString, CSandBoxPtr>& BoxList, const QMap<QString, QStringList>& Groups = QMap<QString, QStringList>(), bool ShowHidden = false);
 
 	CSandBoxPtr		GetSandBox(const QModelIndex &index) const;
 	CBoxedProcessPtr GetProcess(const QModelIndex &index) const;
@@ -33,8 +33,8 @@ public:
 	{
 		eName = 0,
 		eProcessId,
+		eTitle,
 		eStatus,
-		//eTitle,
 		//eLogCount,
 		eTimeStamp,
 		ePath,
@@ -63,6 +63,7 @@ protected:
 
 	QString					FindParent(const QVariant& Name, const QMap<QString, QStringList>& Groups);
 	QList<QVariant>			MakeBoxPath(const QVariant& Name, const QMap<QString, QStringList>& Groups);
+	void					MakeBoxPath(const QVariant& Name, const QMap<QString, QStringList>& Groups, QList<QVariant>& Path);
 
 	//virtual QVariant		GetDefaultIcon() const;
 

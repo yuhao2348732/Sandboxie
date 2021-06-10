@@ -65,6 +65,16 @@ typedef struct _GUI_SLAVE {
 } GUI_SLAVE;
 
 
+typedef struct _WND_HOOK {
+
+    LIST_ELEM list_elem;
+    ULONG pid;
+    DWORD hthread;
+    ULONG64 hproc;
+    int HookCount;
+
+} WND_HOOK;
+
 //---------------------------------------------------------------------------
 // Variables
 //---------------------------------------------------------------------------
@@ -88,6 +98,8 @@ GuiServer::GuiServer()
     m_QueueName = NULL;
     m_ParentPid = 0;
     m_SessionId = 0;
+
+    List_Init(&m_WndHooks);
 
     OSVERSIONINFOW osvi = { 0 };
     osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOW);
@@ -531,8 +543,10 @@ void GuiServer::RunSlave(const WCHAR *cmdline)
     //
 
     PCWCH ConsoleCmdline = wcsstr(cmdline, L"_GuiProxy_Console,");
-    if (ConsoleCmdline)
-        RunConsoleSlave(ConsoleCmdline + 18);
+    if (ConsoleCmdline) {
+        RunConsoleSlave(ConsoleCmdline + 18); // this exits the process
+        return;
+    }
 
     GuiServer *pThis = GetInstance();
 
@@ -749,6 +763,9 @@ bool GuiServer::CreateQueueSlave(const WCHAR *cmdline)
     m_SlaveFuncs[GUI_SET_CURSOR_POS]        = &GuiServer::SetCursorPosSlave;
     m_SlaveFuncs[GUI_REMOVE_HOST_WINDOW]    = &GuiServer::RemoveHostWindow;
     m_SlaveFuncs[GUI_GET_RAW_INPUT_DEVICE_INFO] = &GuiServer::GetRawInputDeviceInfoSlave;
+    m_SlaveFuncs[GUI_WND_HOOK_NOTIFY]       = &GuiServer::WndHookNotifySlave;
+    m_SlaveFuncs[GUI_WND_HOOK_REGISTER]     = &GuiServer::WndHookRegisterSlave;
+
 
     //
     // register a worker thread to process incoming queue requests
@@ -1504,6 +1521,7 @@ ULONG GuiServer::CreateConsoleSlave(SlaveArgs *args)
     if (! hProcess)
         return STATUS_INVALID_CID;
 
+    WCHAR boxname[48];
     WCHAR image_name[128];
     WCHAR *cmdline = NULL;
     HANDLE hToken1 = NULL;
@@ -1512,7 +1530,7 @@ ULONG GuiServer::CreateConsoleSlave(SlaveArgs *args)
     BOOL ok;
 
     ULONG session_id;
-    ULONG status = SbieApi_QueryProcess((HANDLE)(ULONG_PTR)args->pid, NULL,
+    ULONG status = SbieApi_QueryProcess((HANDLE)(ULONG_PTR)args->pid, boxname,
                                         image_name, NULL, &session_id);
     if (status != 0 || session_id != m_SessionId) {
 
@@ -1556,7 +1574,7 @@ ULONG GuiServer::CreateConsoleSlave(SlaveArgs *args)
     sa.bInheritHandle = FALSE;
 
     WCHAR evtname[96];
-    wsprintf(evtname, SANDBOXIE L"_ConsoleReadyEvent_%08X", GetTickCount());
+    wsprintf(evtname, SANDBOXIE L"_ConsoleReadyEvent_%08X:%s", GetTickCount(), boxname);
     hEvent = CreateEvent(&sa, TRUE, FALSE, evtname);
     if (! hEvent) {
         status = STATUS_OBJECT_NAME_COLLISION;
@@ -2411,12 +2429,20 @@ ULONG GuiServer::GetClipboardDataSlave(SlaveArgs *args)
     GUI_GET_CLIPBOARD_DATA_RPL *rpl =
                                 (GUI_GET_CLIPBOARD_DATA_RPL *)args->rpl_buf;
 
-    //todo:  fail if the calling process should not have clipboard access
-
     if (args->req_len != sizeof(GUI_GET_CLIPBOARD_DATA_REQ))
         return STATUS_INFO_LENGTH_MISMATCH;
 
     rpl->result = 0;
+
+    // fail if the calling process should not have clipboard access
+    WCHAR boxname[48] = { 0 };
+    WCHAR exename[128] = { 0 };
+    SbieApi_QueryProcess((HANDLE)args->pid, boxname, exename, NULL, NULL);
+    if (!SbieApi_QueryConfBool(boxname, L"OpenClipboard", TRUE))
+    {
+        rpl->error = ERROR_ACCESS_DENIED;
+        goto finish;
+    }
 
     EnterCriticalSection(&m_SlavesLock);
 
@@ -2477,6 +2503,7 @@ ULONG GuiServer::GetClipboardDataSlave(SlaveArgs *args)
 
     LeaveCriticalSection(&m_SlavesLock);
 
+finish:
     args->rpl_len = sizeof(GUI_GET_CLIPBOARD_DATA_RPL);
     return STATUS_SUCCESS;
 }
@@ -3414,17 +3441,17 @@ ULONG GuiServer::GetRawInputDeviceInfoSlave(SlaveArgs *args)
 
     SetLastError(ERROR_SUCCESS);
     if (req->unicode) {
-        rpl->retval = GetRawInputDeviceInfoW(req->hDevice, req->uiCommand, reqData, pcbSize);
+        rpl->retval = GetRawInputDeviceInfoW((HANDLE)req->hDevice, req->uiCommand, reqData, pcbSize);
     }
     else {
-        rpl->retval = GetRawInputDeviceInfoA(req->hDevice, req->uiCommand, reqData, pcbSize);
+        rpl->retval = GetRawInputDeviceInfoA((HANDLE)req->hDevice, req->uiCommand, reqData, pcbSize);
     }
     rpl->error = GetLastError();
 
     rpl->cbSize = req->cbSize;
     if (pcbSize && req->hasData)
     {
-        // Note: pcbSize seams to be in tchars not in bytes!
+        // Note: pcbSize seems to be in tchars not in bytes!
         ULONG lenData = (*pcbSize) * (req->unicode ? sizeof(WCHAR) : 1);
 
         rpl->hasData = TRUE;
@@ -3436,6 +3463,112 @@ ULONG GuiServer::GetRawInputDeviceInfoSlave(SlaveArgs *args)
 
     args->rpl_len = args->req_len;
 
+    return STATUS_SUCCESS;
+}
+
+
+//---------------------------------------------------------------------------
+// WndHookNotifySlave
+//---------------------------------------------------------------------------
+
+ULONG GuiServer::WndHookNotifySlave(SlaveArgs *args)
+{
+    GUI_WND_HOOK_NOTIFY_REQ *req = (GUI_WND_HOOK_NOTIFY_REQ *)args->req_buf;
+    GUI_WND_HOOK_NOTIFY_RPL *rpl = (GUI_WND_HOOK_NOTIFY_RPL *)args->rpl_buf;
+
+    if (args->req_len != sizeof(GUI_WND_HOOK_NOTIFY_REQ))
+        return STATUS_INFO_LENGTH_MISMATCH;
+
+    rpl->status = STATUS_UNSUCCESSFUL;
+
+    EnterCriticalSection(&m_SlavesLock);
+
+    WND_HOOK* whk = (WND_HOOK*)List_Head(&m_WndHooks);
+    while (whk) {
+        
+        HANDLE hThread = OpenThread(THREAD_SET_CONTEXT, FALSE, (DWORD)whk->hthread);
+		if (hThread)
+		{
+			QueueUserAPC((PAPCFUNC)whk->hproc, hThread, (ULONG_PTR)req->threadid);
+
+			CloseHandle(hThread);
+
+            whk = (WND_HOOK*)List_Next(whk);
+		}
+        else // hook helper thread is no longer valid
+        {
+            WND_HOOK* old_whk = whk; // invalid entry
+
+            whk = (WND_HOOK*)List_Next(whk); // advance next
+
+            // remove invalid entries
+            List_Remove(&m_WndHooks, old_whk);
+            HeapFree(GetProcessHeap(), HEAP_GENERATE_EXCEPTIONS, old_whk);
+        }
+    } 
+
+    LeaveCriticalSection(&m_SlavesLock);
+
+    rpl->status = STATUS_SUCCESS;
+
+    args->rpl_len = sizeof(GUI_WND_HOOK_NOTIFY_RPL);
+    
+    return STATUS_SUCCESS;
+}
+
+
+//---------------------------------------------------------------------------
+// WndHookRegisterSlave
+//---------------------------------------------------------------------------
+
+ULONG GuiServer::WndHookRegisterSlave(SlaveArgs* args)
+{
+    GUI_WND_HOOK_REGISTER_REQ* req = (GUI_WND_HOOK_REGISTER_REQ*)args->req_buf;
+    GUI_WND_HOOK_REGISTER_RPL* rpl = (GUI_WND_HOOK_REGISTER_RPL*)args->rpl_buf;
+
+    if (args->req_len != sizeof(GUI_WND_HOOK_REGISTER_REQ))
+        return STATUS_INFO_LENGTH_MISMATCH;
+
+    rpl->status = STATUS_UNSUCCESSFUL;
+
+    EnterCriticalSection(&m_SlavesLock);
+
+    WND_HOOK* whk = (WND_HOOK*)List_Head(&m_WndHooks);
+    while (whk) {
+        if (whk->pid == args->pid)
+            break;
+        whk = (WND_HOOK*)List_Next(whk);
+    }    
+    
+    if (req->hthread && req->hproc) // register
+    {
+        if (!whk) // add if not already added
+        {
+            whk = (WND_HOOK *)HeapAlloc(GetProcessHeap(), 0, sizeof(WND_HOOK));
+            whk->pid = args->pid;
+            whk->hthread = req->hthread;
+            whk->hproc = req->hproc;
+            whk->HookCount = 0;
+
+            List_Insert_After(&m_WndHooks, NULL, whk);
+        }
+        whk->HookCount++;
+    }
+    else if (whk) // unregister
+    {
+        whk->HookCount--;
+        if (whk->HookCount <= 0) { // remobe if this was the last hook
+            List_Remove(&m_WndHooks, whk);
+            HeapFree(GetProcessHeap(), HEAP_GENERATE_EXCEPTIONS, whk);
+        }
+    }
+
+    LeaveCriticalSection(&m_SlavesLock);
+
+    rpl->status = STATUS_SUCCESS;
+
+    args->rpl_len = sizeof(GUI_WND_HOOK_REGISTER_RPL);
+    
     return STATUS_SUCCESS;
 }
 
@@ -4005,6 +4138,44 @@ bool GuiServer::AllowSendPostMessage(
 #undef ISWNDCLASS
 #undef IS_INPUT_MESSAGE
 
+//---------------------------------------------------------------------------
+// GuiServer__DropConsoleIntegrity
+//---------------------------------------------------------------------------
+
+
+void GuiServer::DropConsoleIntegrity()
+{
+    ULONG_PTR consoleHostProcess;
+    if (!NT_SUCCESS(NtQueryInformationProcess(GetCurrentProcess(), ProcessConsoleHostProcess, &consoleHostProcess, sizeof(ULONG_PTR), NULL)))
+        return;
+    
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, (DWORD)consoleHostProcess);
+    if (! hProcess)
+        return;
+
+    HANDLE tokenHandle;
+    if (OpenProcessToken(hProcess, TOKEN_QUERY | TOKEN_ADJUST_DEFAULT, &tokenHandle))
+    {
+        static SID_IDENTIFIER_AUTHORITY mandatoryLabelAuthority = SECURITY_MANDATORY_LABEL_AUTHORITY;
+
+        UCHAR newSidBuffer[FIELD_OFFSET(SID, SubAuthority) + sizeof(ULONG)];
+        PSID newSid;
+        newSid = (PSID)newSidBuffer;
+        RtlInitializeSid(newSid, &mandatoryLabelAuthority, 1);
+        *RtlSubAuthoritySid(newSid, 0) = SECURITY_MANDATORY_UNTRUSTED_RID;
+
+        TOKEN_MANDATORY_LABEL mandatoryLabel;
+        mandatoryLabel.Label.Sid = newSid;
+        mandatoryLabel.Label.Attributes = SE_GROUP_INTEGRITY;
+
+        NtSetInformationToken(tokenHandle, (TOKEN_INFORMATION_CLASS)TokenIntegrityLevel, &mandatoryLabel, sizeof(TOKEN_MANDATORY_LABEL));
+
+        NtClose(tokenHandle);
+    }
+
+    CloseHandle(hProcess);
+}
+
 
 //---------------------------------------------------------------------------
 // RunConsoleSlave
@@ -4020,6 +4191,8 @@ void GuiServer::RunConsoleSlave(const WCHAR *evtname)
     // to this console using the process id of the console helper
     //
 
+    const WCHAR* boxname = wcsrchr(evtname, L':');
+
     HANDLE hEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, evtname);
 
     const ULONG max_pids = 16000;
@@ -4029,6 +4202,9 @@ void GuiServer::RunConsoleSlave(const WCHAR *evtname)
     if (hEvent && pids) {
 
         if (AllocConsole()) {
+
+            if (boxname++ && SbieApi_QueryConfBool(boxname, L"DropConHostIntegrity", FALSE))
+                DropConsoleIntegrity();
 
             AdjustConsoleTaskbarButton();
 

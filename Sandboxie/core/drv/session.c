@@ -1,6 +1,6 @@
 /*
  * Copyright 2004-2020 Sandboxie Holdings, LLC 
- * Copyright 2020 David Xanatos, xanasoft.com
+ * Copyright 2020-2021 David Xanatos, xanasoft.com
  *
  * This program is free software: you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -104,11 +104,11 @@ static NTSTATUS Session_Api_DisableForce(PROCESS *proc, ULONG64 *parms);
 
 static NTSTATUS Session_Api_MonitorControl(PROCESS *proc, ULONG64 *parms);
 
-static NTSTATUS Session_Api_MonitorPut(PROCESS *proc, ULONG64 *parms);
+//static NTSTATUS Session_Api_MonitorPut(PROCESS *proc, ULONG64 *parms);
 
 static NTSTATUS Session_Api_MonitorPut2(PROCESS *proc, ULONG64 *parms);
 
-static NTSTATUS Session_Api_MonitorGet(PROCESS *proc, ULONG64 *parms);
+//static NTSTATUS Session_Api_MonitorGet(PROCESS *proc, ULONG64 *parms);
 
 static NTSTATUS Session_Api_MonitorGetEx(PROCESS *proc, ULONG64 *parms);
 
@@ -149,9 +149,9 @@ _FX BOOLEAN Session_Init(void)
     Api_SetFunction(API_SESSION_LEADER,         Session_Api_Leader);
     Api_SetFunction(API_DISABLE_FORCE_PROCESS,  Session_Api_DisableForce);
     Api_SetFunction(API_MONITOR_CONTROL,        Session_Api_MonitorControl);
-    Api_SetFunction(API_MONITOR_PUT,            Session_Api_MonitorPut);
+    //Api_SetFunction(API_MONITOR_PUT,            Session_Api_MonitorPut);
     Api_SetFunction(API_MONITOR_PUT2,           Session_Api_MonitorPut2);
-    Api_SetFunction(API_MONITOR_GET,            Session_Api_MonitorGet);
+    //Api_SetFunction(API_MONITOR_GET,            Session_Api_MonitorGet);
 	Api_SetFunction(API_MONITOR_GET_EX,			Session_Api_MonitorGetEx);
 
     //
@@ -504,7 +504,8 @@ _FX NTSTATUS Session_Api_DisableForce(PROCESS *proc, ULONG64 *parms)
     in_flag = args->set_flag.val;
     if (in_flag) {
         ProbeForRead(in_flag, sizeof(ULONG), sizeof(ULONG));
-        if (*in_flag) {
+        ULONG in_flag_value = *in_flag;
+        if (in_flag_value) {
 
             if (! Session_CheckAdminAccess(L"ForceDisableAdminOnly"))
                     return STATUS_ACCESS_DENIED;
@@ -513,7 +514,7 @@ _FX NTSTATUS Session_Api_DisableForce(PROCESS *proc, ULONG64 *parms)
         } else
             time.QuadPart = 0;
 
-        if (*in_flag == DISABLE_JUST_THIS_PROCESS) {
+        if (in_flag_value == DISABLE_JUST_THIS_PROCESS) {
 
             Process_DfpInsert(PROCESS_TERMINATED, PsGetCurrentProcessId());
 
@@ -576,10 +577,10 @@ _FX BOOLEAN Session_IsForceDisabled(ULONG SessionId)
 //---------------------------------------------------------------------------
 
 
-_FX void Session_MonitorPut(USHORT type, const WCHAR *name, HANDLE pid)
+_FX void Session_MonitorPut(ULONG type, const WCHAR *name, HANDLE pid)
 {
 	const WCHAR* strings[2] = { name, NULL };
-	Session_MonitorPutEx(type, strings, pid);
+	Session_MonitorPutEx(type, strings, NULL, pid, PsGetCurrentThreadId());
 }
 
 
@@ -588,7 +589,7 @@ _FX void Session_MonitorPut(USHORT type, const WCHAR *name, HANDLE pid)
 //---------------------------------------------------------------------------
 
 
-_FX void Session_MonitorPutEx(USHORT type, const WCHAR** strings, HANDLE pid)
+_FX void Session_MonitorPutEx(ULONG type, const WCHAR** strings, ULONG* lengths, HANDLE hpid, HANDLE htid)
 {
     SESSION *session;
     KIRQL irql;
@@ -599,22 +600,26 @@ _FX void Session_MonitorPutEx(USHORT type, const WCHAR** strings, HANDLE pid)
 
     if (session->monitor_log && *strings[0]) {
 
-		ULONG64 pid64 = (ULONG64)pid;
-		SIZE_T data_len = 0;
-		for(const WCHAR** string = strings; *string != NULL; string++)
-			data_len += wcslen(*string) * sizeof(WCHAR);
+		ULONG pid = (ULONG)hpid;
+        ULONG tid = (ULONG)htid;
 
-		//[Type 2][PID 8][Data n*2]
-		SIZE_T entry_size = 2 + 8 + data_len;
+		SIZE_T data_len = 0;
+		for(int i=0; strings[i] != NULL; i++)
+			data_len += (lengths ? lengths [i] : wcslen(strings[i])) * sizeof(WCHAR);
+
+        
+		//[Type 4][PID 4][TID 4][Data n*2]
+		SIZE_T entry_size = 4 + 4 + 4 + data_len;
 
 		CHAR* write_ptr = log_buffer_push_entry((LOG_BUFFER_SIZE_T)entry_size, session->monitor_log);
 		if (write_ptr) {
-			log_buffer_push_bytes((CHAR*)&type, 2, &write_ptr, session->monitor_log);
-			log_buffer_push_bytes((CHAR*)&pid64, 8, &write_ptr, session->monitor_log);
+			log_buffer_push_bytes((CHAR*)&type, 4, &write_ptr, session->monitor_log);
+			log_buffer_push_bytes((CHAR*)&pid, 4, &write_ptr, session->monitor_log);
+            log_buffer_push_bytes((CHAR*)&tid, 4, &write_ptr, session->monitor_log);
 
 			// join strings seamlessly
-			for (const WCHAR** string = strings; *string != NULL; string++)
-				log_buffer_push_bytes((CHAR*)*string, wcslen(*string) * sizeof(WCHAR), &write_ptr, session->monitor_log);
+            for (int i = 0; strings[i] != NULL; i++)
+				log_buffer_push_bytes((CHAR*)strings[i], (lengths ? lengths[i] : wcslen(strings[i])) * sizeof(WCHAR), &write_ptr, session->monitor_log);
 		}
 		else // this can only happen when the entire buffer is to small to hold this one entry
 			Log_Msg0(MSG_MONITOR_OVERFLOW);
@@ -634,6 +639,7 @@ _FX NTSTATUS Session_Api_MonitorControl(PROCESS *proc, ULONG64 *parms)
     API_MONITOR_CONTROL_ARGS *args = (API_MONITOR_CONTROL_ARGS *)parms;
     ULONG *in_flag;
     ULONG *out_flag;
+    ULONG *out_used;
     SESSION *session;
     KIRQL irql;
     BOOLEAN EnableMonitor;
@@ -657,6 +663,18 @@ _FX NTSTATUS Session_Api_MonitorControl(PROCESS *proc, ULONG64 *parms)
         }
     }
 
+    //out_used = args->get_used.val;
+    //if (out_used) {
+    //    ProbeForWrite(out_used, sizeof(ULONG), sizeof(ULONG));
+    //    *out_used = 0;
+    //    session = Session_Get(FALSE, -1, &irql);
+    //    if (session) {
+    //        if (session->monitor_log)
+    //            *out_used = (ULONG)session->monitor_log->buffer_used;
+    //        Session_Unlock(irql);
+    //    }
+    //}
+
     //
     // set status
     //
@@ -679,7 +697,14 @@ _FX NTSTATUS Session_Api_MonitorControl(PROCESS *proc, ULONG64 *parms)
 
             if (EnableMonitor && (! session->monitor_log)) {
 
-				session->monitor_log = log_buffer_init(SESSION_MONITOR_BUF_SIZE * sizeof(WCHAR));
+                ULONG BuffSize = Conf_Get_Number(NULL, L"TraceBufferPages", 0, 256) * PAGE_SIZE;
+
+				session->monitor_log = log_buffer_init(BuffSize * sizeof(WCHAR));
+                if (!session->monitor_log) {
+                    Log_Msg0(MSG_1201);
+                    session->monitor_log = log_buffer_init(SESSION_MONITOR_BUF_SIZE * sizeof(WCHAR));
+                }
+
                 if (session->monitor_log) {
                     InterlockedIncrement(&Session_MonitorCount);
                 } else
@@ -705,13 +730,14 @@ _FX NTSTATUS Session_Api_MonitorControl(PROCESS *proc, ULONG64 *parms)
 //---------------------------------------------------------------------------
 
 
-_FX NTSTATUS Session_Api_MonitorPut(PROCESS *proc, ULONG64 *parms)
-{
-    API_MONITOR_GET_PUT_ARGS *args = (API_MONITOR_GET_PUT_ARGS *)parms;
-    API_MONITOR_PUT2_ARGS args2 = { args->func_code, args->log_type.val64, args->log_len.val64, args->log_ptr.val64, TRUE };
+//_FX NTSTATUS Session_Api_MonitorPut(PROCESS *proc, ULONG64 *parms)
+//{
+//    API_MONITOR_GET_PUT_ARGS *args = (API_MONITOR_GET_PUT_ARGS *)parms;
+//    API_MONITOR_PUT2_ARGS args2 = { args->func_code, args->log_type.val64, args->log_len.val64, args->log_ptr.val64, TRUE, 0 };
+//
+//    return Session_Api_MonitorPut2(proc, (ULONG64*)&args2);
+//}
 
-    return Session_Api_MonitorPut2(proc, (ULONG64*)&args2);
-}
 
 //---------------------------------------------------------------------------
 // Session_Api_MonitorPut
@@ -721,14 +747,11 @@ _FX NTSTATUS Session_Api_MonitorPut(PROCESS *proc, ULONG64 *parms)
 _FX NTSTATUS Session_Api_MonitorPut2(PROCESS *proc, ULONG64 *parms)
 {
     API_MONITOR_PUT2_ARGS *args = (API_MONITOR_PUT2_ARGS *)parms;
-    UNICODE_STRING objname;
-    void *object;
-    USHORT *log_type;
+    ULONG log_type;
     WCHAR *log_data;
     WCHAR *name;
     NTSTATUS status;
     ULONG log_len;
-    USHORT type;
 
     if (! proc)
         return STATUS_NOT_IMPLEMENTED;
@@ -736,21 +759,32 @@ _FX NTSTATUS Session_Api_MonitorPut2(PROCESS *proc, ULONG64 *parms)
     if (! Session_MonitorCount)
         return STATUS_SUCCESS;
 
-	log_type = args->log_type.val;
-    ProbeForRead(log_type, sizeof(USHORT), sizeof(USHORT));
-    type = *log_type;
-    if (! type)
+    log_type = args->log_type.val;
+    if (!log_type)
         return STATUS_INVALID_PARAMETER;
 
 	log_len = args->log_len.val / sizeof(WCHAR);
     if (!log_len)
         return STATUS_INVALID_PARAMETER;
-	if (log_len > 256) // truncate as we only have 260 in buffer
-		log_len = 256;
-	log_data = args->log_ptr.val;
+
+    log_data = args->log_ptr.val;
     ProbeForRead(log_data, log_len * sizeof(WCHAR), sizeof(WCHAR));
 
-    name = Mem_Alloc(proc->pool, 260 * sizeof(WCHAR)); // todo: should we increase this ?
+    //
+    // if we dont need to check_object_exists we can use a shortcut
+    //
+
+    if (!args->check_object_exists.val64){ 
+        const WCHAR* strings[2] = { log_data, NULL };
+        ULONG lengths[2] = { log_len, 0 };
+        Session_MonitorPutEx(log_type | MONITOR_USER, strings, lengths, proc->pid, PsGetCurrentThreadId());
+        return STATUS_SUCCESS;
+    }
+
+    const ULONG max_buff = 2048;
+	if (log_len > max_buff) // truncate as we only have 1028 in buffer
+		log_len = max_buff;
+    name = Mem_Alloc(proc->pool, (max_buff + 4) * sizeof(WCHAR)); // todo: should we increase this ?
     if (! name)
         return STATUS_INSUFFICIENT_RESOURCES;
 
@@ -765,46 +799,48 @@ _FX NTSTATUS Session_Api_MonitorPut2(PROCESS *proc, ULONG64 *parms)
         name[log_len] = L'\0';
 
         status = STATUS_SUCCESS;
-        object = NULL;
 
-        //
-        // if type is MONITOR_IPC we try to open the object
-        // to get the name assigned to it at time of creation
-        //
+        if (args->check_object_exists.val64 && ((log_type & MONITOR_TRACE) == 0)) { // do not check objects if this is a trace entry
 
-        if ((type & 0xFFF) == MONITOR_IPC) {
+            UNICODE_STRING objname;
+            void* object = NULL;
 
-            ULONG i;
+            //
+            // if type is MONITOR_IPC we try to open the object
+            // to get the name assigned to it at time of creation
+            //
 
-            RtlInitUnicodeString(&objname, name);
+            if ((log_type & MONITOR_TYPE_MASK) == MONITOR_IPC) {
 
-            for (i = 0; Session_ObjectTypes[i]; ++i) {
+                ULONG i;
 
-                // ObReferenceObjectByName needs a non-zero ObjectType
-                // so we have to keep going through all possible object
-                // types as long as we get STATUS_OBJECT_TYPE_MISMATCH
+                RtlInitUnicodeString(&objname, name);
 
-                status = ObReferenceObjectByName(
-                            &objname, OBJ_CASE_INSENSITIVE, NULL, 0,
-                            Session_ObjectTypes[i], KernelMode, NULL,
-                            &object);
+                for (i = 0; Session_ObjectTypes[i]; ++i) {
 
-                if (status != STATUS_OBJECT_TYPE_MISMATCH)
-                    break;
+                    // ObReferenceObjectByName needs a non-zero ObjectType
+                    // so we have to keep going through all possible object
+                    // types as long as we get STATUS_OBJECT_TYPE_MISMATCH
+
+                    status = ObReferenceObjectByName(
+                                &objname, OBJ_CASE_INSENSITIVE, NULL, 0,
+                                Session_ObjectTypes[i], KernelMode, NULL,
+                                &object);
+
+                    if (status != STATUS_OBJECT_TYPE_MISMATCH)
+                        break;
+                }
+
+                // DbgPrint("IPC  Status = %08X Object = %08X for Open <%S>\n", status, object, name);
             }
 
-            // DbgPrint("IPC  Status = %08X Object = %08X for Open <%S>\n", status, object, name);
-        }
+            //
+            // if type is MONITOR_PIPE we try to open the pipe
+            // to get the name assigned to it at time of creation
+            //
 
-        //
-        // if type is MONITOR_PIPE we try to open the pipe
-        // to get the name assigned to it at time of creation
-        //
+            if ((log_type & MONITOR_TYPE_MASK) == MONITOR_PIPE) {
 
-        if ((type & 0xFFF) == MONITOR_PIPE) {
-
-            if (args->check_object_exists.val64)
-            {
                 OBJECT_ATTRIBUTES objattrs;
                 IO_STATUS_BLOCK IoStatusBlock;
                 HANDLE handle;
@@ -844,35 +880,36 @@ _FX NTSTATUS Session_Api_MonitorPut2(PROCESS *proc, ULONG64 *parms)
 
                 //DbgPrint("PIPE Status3 = %08X Object = %08X for Open <%S>\n", status, object, name);
             }
-        }
 
-        //
-        // if we have an object, get its name from the kernel object
-        //
+            //
+            // if we have an object, get its name from the kernel object
+            //
 
-        if (NT_SUCCESS(status) && object) {
+            if (NT_SUCCESS(status) && object) {
 
-            OBJECT_NAME_INFORMATION *Name;
-            ULONG NameLength;
+                OBJECT_NAME_INFORMATION *Name;
+                ULONG NameLength;
 
-            status = Obj_GetNameOrFileName(
-                                    proc->pool, object, &Name, &NameLength);
+                status = Obj_GetNameOrFileName(
+                                        proc->pool, object, &Name, &NameLength);
 
-            if (NT_SUCCESS(status)) {
+                if (NT_SUCCESS(status)) {
 
-				log_len = Name->Name.Length / sizeof(WCHAR);
-                if (log_len > 256) // truncate as we only have 260 in buffer
-					log_len = 256;
-                wmemcpy(name, Name->Name.Buffer, log_len);
-                name[log_len] = L'\0';
+				    log_len = Name->Name.Length / sizeof(WCHAR);
+                    if (log_len > max_buff) // truncate as we only have 1028 in buffer
+					    log_len = max_buff;
+                    wmemcpy(name, Name->Name.Buffer, log_len);
+                    name[log_len] = L'\0';
 
-                if (Name != &Obj_Unnamed)
-                    Mem_Free(Name, NameLength);
+                    if (Name != &Obj_Unnamed)
+                        Mem_Free(Name, NameLength);
 
-                // DbgPrint("Determined Object Name <%S>\n", name);
+                    // DbgPrint("Determined Object Name <%S>\n", name);
+                }
+
+                ObDereferenceObject(object);
             }
 
-            ObDereferenceObject(object);
         }
 
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -892,10 +929,11 @@ _FX NTSTATUS Session_Api_MonitorPut2(PROCESS *proc, ULONG64 *parms)
             name[1] = L'\0';
         }
 
-        Session_MonitorPut(type, name, proc->pid);
+        const WCHAR* strings[2] = { name, NULL };
+        Session_MonitorPutEx(log_type | MONITOR_USER, strings, NULL, proc->pid, PsGetCurrentThreadId());
     }
 
-    Mem_Free(name, 260 * sizeof(WCHAR));
+    Mem_Free(name, (max_buff + 4) * sizeof(WCHAR));
 
     return STATUS_SUCCESS;
 }
@@ -905,115 +943,137 @@ _FX NTSTATUS Session_Api_MonitorPut2(PROCESS *proc, ULONG64 *parms)
 // Session_Api_MonitorGet
 //---------------------------------------------------------------------------
 
-_FX NTSTATUS Session_Api_MonitorGet(PROCESS *proc, ULONG64 *parms)
-{
-	API_MONITOR_GET_PUT_ARGS *args = (API_MONITOR_GET_PUT_ARGS *)parms;
-	API_MONITOR_GET_EX_ARGS args2 = { args->func_code, 0, args->log_type.val64, 0, args->log_len.val64, args->log_ptr.val64 };
-
-	return Session_Api_MonitorGetEx(proc, (ULONG64*)&args2);
-}
+//_FX NTSTATUS Session_Api_MonitorGet(PROCESS *proc, ULONG64 *parms)
+//{
+//	API_MONITOR_GET_PUT_ARGS *args = (API_MONITOR_GET_PUT_ARGS *)parms;
+//	API_MONITOR_GET_EX_ARGS args2 = { args->func_code, 0, args->log_type.val64, 0, args->log_len.val64, args->log_ptr.val64 };
+//
+//	return Session_Api_MonitorGetEx(proc, (ULONG64*)&args2);
+//}
 
 //---------------------------------------------------------------------------
 // Session_Api_MonitorGetEx
 //---------------------------------------------------------------------------
 
-_FX NTSTATUS Session_Api_MonitorGetEx(PROCESS *proc, ULONG64 *parms)
+_FX NTSTATUS Session_Api_MonitorGetEx(PROCESS* proc, ULONG64* parms)
 {
-	API_MONITOR_GET_EX_ARGS *args = (API_MONITOR_GET_EX_ARGS *)parms;
+    API_MONITOR_GET_EX_ARGS* args = (API_MONITOR_GET_EX_ARGS*)parms;
     NTSTATUS status;
-	ULONG *seq_num;
-    USHORT *log_type;
-	ULONG64 *log_pid;
-    ULONG log_len;
-    WCHAR *log_data;
-    SESSION *session;
+    ULONG* seq_num;
+    ULONG* log_type;
+    ULONG* log_pid;
+    ULONG* log_tid;
+    UNICODE_STRING64* log_data;
+    WCHAR* log_buffer;
+    SESSION* session;
     KIRQL irql;
 
     if (proc)
         return STATUS_NOT_IMPLEMENTED;
 
-	seq_num = args->log_seq.val;
-	if (seq_num != NULL) {
-		ProbeForRead(seq_num, sizeof(ULONG), sizeof(ULONG));
-		ProbeForWrite(seq_num, sizeof(ULONG), sizeof(ULONG));
-	}
+    seq_num = args->log_seq.val;
+    if (seq_num != NULL) {
+        ProbeForRead(seq_num, sizeof(ULONG), sizeof(ULONG));
+        ProbeForWrite(seq_num, sizeof(ULONG), sizeof(ULONG));
+    }
 
-	log_type = args->log_type.val;
-    ProbeForWrite(log_type, sizeof(USHORT), sizeof(USHORT));
-
-	log_pid = args->log_pid.val;
-	if (log_pid != NULL)
-		ProbeForWrite(log_pid, sizeof(ULONG64), sizeof(ULONG64));
-
-	log_len = args->log_len.val / sizeof(WCHAR);
-    if (!log_len)
-        return STATUS_INVALID_PARAMETER;
-	log_data = args->log_ptr.val;
-    ProbeForWrite(log_data, log_len * sizeof(WCHAR), sizeof(WCHAR));
-
+    log_type = args->log_type.val;
+    ProbeForWrite(log_type, sizeof(ULONG), sizeof(ULONG));
     *log_type = 0;
-	if (log_pid != NULL)
-		*log_pid = 0;
-    *log_data = L'\0';
+
+    log_pid = args->log_pid.val;
+    if (log_pid != NULL) {
+        ProbeForWrite(log_pid, sizeof(ULONG), sizeof(ULONG));
+        *log_pid = 0;
+    }
+
+    log_tid = args->log_tid.val;
+    if (log_tid != NULL) {
+        ProbeForWrite(log_tid, sizeof(ULONG), sizeof(ULONG));
+        *log_tid = 0;
+    }
+
+    log_data = args->log_data.val;
+    if (!log_data)
+        return STATUS_INVALID_PARAMETER;
+    ProbeForRead(log_data, sizeof(UNICODE_STRING64), sizeof(ULONG));
+    ProbeForWrite(log_data, sizeof(UNICODE_STRING64), sizeof(ULONG));
+
+    log_buffer = (WCHAR*)log_data->Buffer;
+    if (!log_buffer)
+        return STATUS_INVALID_PARAMETER;
+    
     status = STATUS_SUCCESS;
 
     session = Session_Get(FALSE, -1, &irql);
-    if (! session)
+    if (!session)
         return STATUS_UNSUCCESSFUL;
 
     __try {
 
-		if (!session->monitor_log) {
+        if (!session->monitor_log) {
 
-			status = STATUS_DEVICE_NOT_READY;
-			__leave;
-		}
+            status = STATUS_DEVICE_NOT_READY;
+            __leave;
+        }
 
-		CHAR* read_ptr = NULL;
-		if (seq_num != NULL)
-			read_ptr = log_buffer_get_next(*seq_num, session->monitor_log);
-		else if (session->monitor_log->buffer_size > 0) // for compatibility with older versions we return the oldest entry
-			read_ptr = session->monitor_log->buffer_start_ptr;
+        CHAR* read_ptr = NULL;
+        if (seq_num != NULL)
+            read_ptr = log_buffer_get_next(*seq_num, session->monitor_log);
+        else if (session->monitor_log->buffer_size > 0) // for compatibility with older versions we return the oldest entry
+            read_ptr = session->monitor_log->buffer_start_ptr;
 
-		if (!read_ptr) {
+        if (!read_ptr) {
 
-			status = STATUS_NO_MORE_ENTRIES;
-			__leave;
-		}
+            status = STATUS_NO_MORE_ENTRIES;
+            __leave;
+        }
 
-		LOG_BUFFER_SIZE_T entry_size = log_buffer_get_size(&read_ptr, session->monitor_log);
-		LOG_BUFFER_SEQ_T seq_number = log_buffer_get_seq_num(&read_ptr, session->monitor_log);
+        LOG_BUFFER_SIZE_T entry_size = log_buffer_get_size(&read_ptr, session->monitor_log);
+        LOG_BUFFER_SEQ_T seq_number = log_buffer_get_seq_num(&read_ptr, session->monitor_log);
 
-		//if (seq_num != NULL && seq_number != *seq_num + 1) {
-		//
-		//	status = STATUS_REQUEST_OUT_OF_SEQUENCE;
-		//	*seq_num = seq_number - 1;
-		//	__leave;
-		//}
+        //if (seq_num != NULL && seq_number != *seq_num + 1) {
+        //
+        //	status = STATUS_REQUEST_OUT_OF_SEQUENCE;
+        //	*seq_num = seq_number - 1;
+        //	__leave;
+        //}
 
-		//[Type 2][PID 8][Data n*2]
+        //[Type 4][PID 4][TID 4][Data n*2]
 
-		log_buffer_get_bytes((CHAR*)log_type, 2, &read_ptr, session->monitor_log);
-		ULONG64 pid64;
-		log_buffer_get_bytes((CHAR*)&pid64, 8, &read_ptr, session->monitor_log);
-		if (log_pid != NULL)
-			*log_pid = pid64;
+        log_buffer_get_bytes((CHAR*)log_type, 4, &read_ptr, session->monitor_log);
 
-		log_len -= sizeof(WCHAR); // reserve room for the termination character
-		if (log_len > entry_size - (2 + 8))
-			log_len = entry_size - (2 + 8);
-		log_buffer_get_bytes((CHAR*)log_data, log_len, &read_ptr, session->monitor_log);
+        ULONG pid;
+        log_buffer_get_bytes((CHAR*)&pid, 4, &read_ptr, session->monitor_log);
+        if (log_pid != NULL)
+            *log_pid = pid;
 
-		// add required termination character
-		*(WCHAR*)(((CHAR*)log_data) + log_len) = L'\0';
+        ULONG tid;
+        log_buffer_get_bytes((CHAR*)&tid, 4, &read_ptr, session->monitor_log);
+        if (log_tid != NULL)
+            *log_tid = tid;
 
-		if (seq_num != NULL)
-			*seq_num = seq_number;
-		else // for compatibility with older versions we fall back to clearing the returned entry
-			log_buffer_pop_entry(session->monitor_log);
+        ULONG data_size = (entry_size - (4 + 4 + 4));
+        if ((USHORT)data_size > (log_data->MaximumLength - 1))
+        {
+            data_size = (log_data->MaximumLength - 1);
+            status = STATUS_BUFFER_TOO_SMALL;
+        }
+        
+        log_data->Length = (USHORT)data_size;
+        ProbeForWrite(log_buffer, data_size + 1, sizeof(WCHAR));
+        memcpy(log_buffer, read_ptr, data_size);
+
+        log_buffer[data_size / sizeof(wchar_t)] = L'\0';
         
 
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        if (seq_num != NULL)
+            *seq_num = seq_number;
+        else // for compatibility with older versions we fall back to clearing the returned entry
+            log_buffer_pop_entry(session->monitor_log);
+
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
         status = GetExceptionCode();
     }
 

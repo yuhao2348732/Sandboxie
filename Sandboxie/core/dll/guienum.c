@@ -111,9 +111,9 @@ static HWND Gui_FindWindowExA(
 
 //---------------------------------------------------------------------------
 
-static void Gui_MonitorW(const WCHAR *clsnm, USHORT monflag, HWND hwnd);
+static void Gui_MonitorW(const WCHAR *clsnm, ULONG monflag, HWND hwnd);
 
-static void Gui_MonitorA(const UCHAR *clsnm, USHORT monflag, HWND hwnd);
+static void Gui_MonitorA(const UCHAR *clsnm, ULONG monflag, HWND hwnd);
 
 //---------------------------------------------------------------------------
 
@@ -236,7 +236,8 @@ _FX BOOLEAN Gui_InitEnum(void)
     // raises an error when CreateDesktop is call.  This hook
     // is removed for chrome.  See advapi.c: AdvApi_GetSecurityInfo
 
-    if ((Dll_ImageType != DLL_IMAGE_GOOGLE_CHROME) &&
+    if (!Config_GetSettingsForImageName_bool(L"UseSbieWndStation", FALSE) && 
+        (Dll_ImageType != DLL_IMAGE_GOOGLE_CHROME) &&
         (Dll_ImageType != DLL_IMAGE_MOZILLA_FIREFOX)) {
         SBIEDLL_HOOK_GUI(CreateDesktopW);
         SBIEDLL_HOOK_GUI(CreateDesktopA);
@@ -245,7 +246,8 @@ _FX BOOLEAN Gui_InitEnum(void)
         SBIEDLL_HOOK_GUI(CreateWindowStationW);
         SBIEDLL_HOOK_GUI(CreateWindowStationA);
     }    
-return TRUE;
+
+    return TRUE;
 }
 
 
@@ -722,7 +724,7 @@ _FX HWND Gui_FindWindowW(
     WCHAR *clsnm;
     WCHAR *winnm;
     HWND hwndResult;
-    USHORT monflag = 0;
+    ULONG monflag = 0;
 
 #ifdef DEBUG_FINDWINDOW
     WCHAR txt[256];
@@ -781,7 +783,7 @@ _FX HWND Gui_FindWindowA(
     UCHAR *clsnm;
     UCHAR *winnm;
     HWND hwndResult;
-    USHORT monflag = 0;
+    ULONG monflag = 0;
 
 #ifdef DEBUG_FINDWINDOW
     WCHAR txt[256];
@@ -840,7 +842,7 @@ _FX HWND Gui_FindWindowExW(
     WCHAR *clsnm;
     WCHAR *winnm;
     HWND hwndResult;
-    USHORT monflag = 0;
+    ULONG monflag = 0;
 
 #ifdef DEBUG_FINDWINDOW
     WCHAR txt[256];
@@ -901,7 +903,7 @@ _FX HWND Gui_FindWindowExA(
     UCHAR *clsnm;
     UCHAR *winnm;
     HWND hwndResult;
-    USHORT monflag = 0;
+    ULONG monflag = 0;
 
 #ifdef DEBUG_FINDWINDOW
     WCHAR txt[256];
@@ -955,7 +957,7 @@ _FX HWND Gui_FindWindowExA(
 //---------------------------------------------------------------------------
 
 
-_FX void Gui_MonitorW(const WCHAR *clsnm, USHORT monflag, HWND hwnd)
+_FX void Gui_MonitorW(const WCHAR *clsnm, ULONG monflag, HWND hwnd)
 {
     WCHAR text[130];
     if (((ULONG_PTR)clsnm & (LONG_PTR)0xFFFF0000) != 0) {
@@ -974,7 +976,7 @@ _FX void Gui_MonitorW(const WCHAR *clsnm, USHORT monflag, HWND hwnd)
 //---------------------------------------------------------------------------
 
 
-_FX void Gui_MonitorA(const UCHAR *clsnm, USHORT monflag, HWND hwnd)
+_FX void Gui_MonitorA(const UCHAR *clsnm, ULONG monflag, HWND hwnd)
 {
     if (((ULONG_PTR)clsnm & (LONG_PTR)0xFFFF0000) != 0) {
         NTSTATUS status;

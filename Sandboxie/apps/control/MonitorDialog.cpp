@@ -1,6 +1,6 @@
 /*
  * Copyright 2004-2020 Sandboxie Holdings, LLC 
- * Copyright 2020 David Xanatos, xanasoft.com
+ * Copyright 2020-2021 David Xanatos, xanasoft.com
  *
  * This program is free software: you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -97,13 +97,15 @@ BOOL CMonitorDialog::OnInitDialog()
 void CMonitorDialog::OnIdle()
 {
     static const WCHAR *_Unknown    = L"(Unk)    ";
+    static const WCHAR *_SysCall    = L"SysCall  ";
     static const WCHAR *_Pipe       = L"Pipe     ";
     static const WCHAR *_Ipc        = L"Ipc      ";
     static const WCHAR *_WinClass   = L"WinCls   ";
     static const WCHAR *_Drive      = L"(Drive)  ";
     static const WCHAR *_Clsid      = L"Clsid    ";
     static const WCHAR *_Image      = L"Image    ";
-    static const WCHAR *_FileOrKey  = L"File/Key ";
+    static const WCHAR *_File       = L"File     ";
+    static const WCHAR *_Key        = L"Key      ";
 	static const WCHAR *_Other      = L"Other    ";
     static const WCHAR *_Separator  = L"   -------------------------------";
 
@@ -113,9 +115,10 @@ void CMonitorDialog::OnIdle()
     while (1) {
 
 		ULONG seq_num = m_last_entry_seq_num;
-        USHORT type;
-		ULONG64 pid;
-        ULONG status = SbieApi_MonitorGetEx(&seq_num, &type, &pid, &name[12]);
+        ULONG type;
+        ULONG pid;
+        ULONG tid;
+        ULONG status = SbieApi_MonitorGetEx(&seq_num, &type, &pid, &tid, &name[12]);
 		if (status != 0)
 			break; // error or no more entries
 
@@ -143,10 +146,12 @@ void CMonitorDialog::OnIdle()
         } else if (type & MONITOR_DENY) {
             name[9] = L'X';
         }
-		type &= 0x0FFF;
+		type &= MONITOR_TYPE_MASK;
 
         const WCHAR *PrefixPtr = _Unknown;
-        if (type == MONITOR_PIPE)
+        if (type == MONITOR_SYSCALL)
+            PrefixPtr = _SysCall;
+        else if (type == MONITOR_PIPE)
             PrefixPtr = _Pipe;
         else if (type == MONITOR_IPC)
             PrefixPtr = _Ipc;
@@ -158,13 +163,15 @@ void CMonitorDialog::OnIdle()
             PrefixPtr = _Clsid;
         else if (type == MONITOR_IMAGE)
             PrefixPtr = _Image;
-        else if (type == MONITOR_FILE_OR_KEY)
-            PrefixPtr = _FileOrKey;
+        else if (type == MONITOR_FILE)
+            PrefixPtr = _File;
+        else if (type == MONITOR_KEY)
+            PrefixPtr = _Key;
         else if (type == MONITOR_OTHER)
             PrefixPtr = _Other;
         wcsncpy(name, PrefixPtr, 9);
 
-		wsprintf(&name[wcslen(name)], L"; PID: %I64u", pid);
+		wsprintf(&name[wcslen(name)], L"; PID: %d", pid);
 
         int index = listbox->AddString(name);
 
@@ -189,7 +196,11 @@ void CMonitorDialog::OnIdle()
             wcscat(name, _Separator);
             listbox->AddString(name);
 
-            wcscpy(name, _FileOrKey);
+            wcscpy(name, _File);
+            wcscat(name, _Separator);
+            listbox->AddString(name);
+
+            wcscpy(name, _Key);
             wcscat(name, _Separator);
             listbox->AddString(name);
 

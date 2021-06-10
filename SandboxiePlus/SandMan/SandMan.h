@@ -7,24 +7,21 @@
 #include "../MiscHelpers/Common/PanelView.h"
 #include "../MiscHelpers/Common/ProgressDialog.h"
 #include "../MiscHelpers/Common/NetworkAccessManager.h"
-#include "Models/ResMonModel.h"
-#include "Models/ApiMonModel.h"
+#include "Models/TraceModel.h"
+//#include "Models/ApiMonModel.h"
 #include <QTranslator>
 #include "Windows/PopUpWindow.h"
 
-#define VERSION_MJR		0
-#define VERSION_MIN 	5
-#define VERSION_REV 	3
-#define VERSION_UPD 	2
+#include "../version.h"
 
 
 //#include "../QSbieAPI/SbieAPI.h"
 #include "SbiePlusAPI.h"
 
 class CSbieView;
-class CApiLog;
 class CBoxBorder;
 class CSbieTemplates;
+class CTraceView;
 
 class CSandMan : public QMainWindow
 {
@@ -48,6 +45,8 @@ public:
 
 	bool				IsFullyPortable();
 
+	bool				IsShowHidden() { return m_pShowHidden->isChecked(); }
+
 protected:
 	SB_STATUS			ConnectSbie();
 	SB_STATUS			ConnectSbieImpl();
@@ -56,20 +55,24 @@ protected:
 
 	static void			RecoverFilesAsync(const CSbieProgressPtr& pProgress, const QList<QPair<QString, QString>>& FileList, int Action = 0);
 
-	void				closeEvent(QCloseEvent *e);
+	void				closeEvent(QCloseEvent* e);
+
+	void				dragEnterEvent(QDragEnterEvent* e);
+	void				dropEvent(QDropEvent* e);
+
 	void				timerEvent(QTimerEvent* pEvent);
 	int					m_uTimerID;
 	bool				m_bConnectPending;
 	bool				m_bStopPending;
 	CBoxBorder*			m_pBoxBorder;
 	CSbieTemplates*		m_SbieTemplates;
-
-	CApiLog*			m_ApiLog;
 	
 	QMap<CSbieProgress*, CSbieProgressPtr> m_pAsyncProgress;
 
 	CNetworkAccessManager*	m_RequestManager;
 	CSbieProgressPtr	m_pUpdateProgress;
+
+	QStringList			m_MissingTemplates;
 
 public slots:
 	void				OnMessage(const QString&);
@@ -100,6 +103,8 @@ public slots:
 
 	void				OpenUrl(const QUrl& url);
 
+	int					ShowQuestion(const QString& question, const QString& checkBoxText, bool* checkBoxSetting, int buttons, int defaultButton);
+
 private slots:
 	void				OnSelectionChanged();
 
@@ -107,11 +112,13 @@ private slots:
 
 	void				OnNewBox();
 	void				OnEmptyAll();
+	void				OnWndFinder();
 	void				OnDisableForce();
 	void				OnDisableForce2();
 	void				OnMaintenance();
 
 	void				OnViewMode(QAction* action);
+	void				OnAlwaysTop();
 	void				OnCleanUp();
 	void				OnSetKeep();
 
@@ -120,7 +127,6 @@ private slots:
 	void				OnEditIni();
 	void				OnReloadIni();
 	void				OnSetMonitoring();
-	void				OnSetLogging();
 
 	void				OnExit();
 	void				OnHelp();
@@ -157,15 +163,13 @@ private:
 	QTabWidget*			m_pLogTabs;
 
 	CPanelWidgetEx*		m_pMessageLog;
-	CPanelViewEx*		m_pResourceLog;
-	CResMonModel*		m_pResMonModel;
-	CPanelViewEx*		m_pApiCallLog;
-	CApiMonModel*		m_pApiMonModel;
+	CTraceView*			m_pTraceView;
 
 
 	QMenu*				m_pMenuFile;
 	QAction*			m_pNew;
 	QAction*			m_pEmptyAll;
+	QAction*			m_pWndFinder;
 	QAction*			m_pDisableForce;
 	QAction*			m_pDisableForce2;
 	QMenu*				m_pMaintenance;
@@ -185,12 +189,13 @@ private:
 
 	QMenu*				m_pMenuView;
 	QActionGroup*		m_pViewMode;
+	QAction*			m_pShowHidden;
+	QAction*			m_pWndTopMost;
 	int					m_iMenuViewPos;
 	QMenu*				m_pCleanUpMenu;
 	QAction*			m_pCleanUpProcesses;
 	QAction*			m_pCleanUpMsgLog;
-	QAction*			m_pCleanUpResLog;
-	QAction*			m_pCleanUpApiLog;
+	QAction*			m_pCleanUpTrace;
 	QToolButton*		m_pCleanUpButton;
 	QAction*			m_pKeepTerminated;
 
@@ -200,7 +205,6 @@ private:
 	QAction*			m_pEditIni;
 	QAction*			m_pReloadIni;
 	QAction*			m_pEnableMonitoring;
-	QAction*			m_pEnableLogging;
 
 	QMenu*				m_pMenuHelp;
 	QAction*			m_pSupport;
@@ -220,7 +224,7 @@ private:
 	CProgressDialog*	m_pProgressDialog;
 	CPopUpWindow*		m_pPopUpWindow;
 
-	void				SetDarkTheme(bool bDark);
+	void				SetUITheme();
 	QString				m_DefaultStyle;
 	QPalette			m_DefaultPalett;
 
@@ -229,6 +233,7 @@ private:
 	QByteArray			m_Translation;
 public:
 	quint32				m_LanguageId;
+	bool				m_DarkTheme;
 };
 
 extern CSandMan* theGUI;

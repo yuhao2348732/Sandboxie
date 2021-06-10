@@ -37,35 +37,73 @@ CSandBox::CSandBox(const QString& BoxName, class CSbieAPI* pAPI) : CSbieIni(BoxN
 {
 	//m = new SSandBox;
 
+	m_IsEnabled = true;
+
 	m_ActiveProcessCount = 0;
 
 	// when loading a sandbox that is not initialized, initialize it
 	int cfglvl = GetNum("ConfigLevel");
-	if (cfglvl >= 7)
+	if (cfglvl >= 9)
 		return;
-	SetNum("ConfigLevel", 7);
 
-	SetBool("AutoRecover", false);
-	SetBool("BlockNetworkFiles", true);
+	if (cfglvl == 0)
+	{
+		SetBool("AutoRecover", false);
+		SetBool("BlockNetworkFiles", true);
 
-	// templates L6
-	InsertText("Template", "AutoRecoverIgnore");
-	InsertText("Template", "Firefox_Phishing_DirectAccess");
-	InsertText("Template", "Chrome_Phishing_DirectAccess");
-	InsertText("Template", "LingerPrograms");
-	// templates L7
-	InsertText("Template", "BlockPorts");
-	InsertText("Template", "WindowsFontCache");
-	InsertText("Template", "qWave");
+		// recovery
+		InsertText("RecoverFolder", "%Desktop%");
+		//InsertText("RecoverFolder", "%Favorites%"); // obsolete
+		InsertText("RecoverFolder", "%Personal%");
+		InsertText("RecoverFolder", "%{374DE290-123F-4565-9164-39C4925E467B}%"); // %USERPROFILE%\Downloads
 
-	// recovery
-	InsertText("RecoverFolder", "%Desktop%");
-	//InsertText("RecoverFolder", "%Favorites%"); // obsolete
-	InsertText("RecoverFolder", "%Personal%");
-	InsertText("RecoverFolder", "%{374DE290-123F-4565-9164-39C4925E467B}%"); // %USERPROFILE%\Downloads
+		SetText("BorderColor", "#00FFFF,ttl"); // "#00FFFF,off"
+	}
 
-	SetText("BorderColor", "#00FFFF,ttl"); // "#00FFFF,off"
+	if (cfglvl < 6)
+	{
+		// templates L6
+		InsertText("Template", "AutoRecoverIgnore");
+		InsertText("Template", "Firefox_Phishing_DirectAccess");
+		InsertText("Template", "Chrome_Phishing_DirectAccess");
+		InsertText("Template", "LingerPrograms");
+	}
+
+	if (cfglvl < 7)
+	{
+		// templates L7
+		InsertText("Template", "BlockPorts");
+		//InsertText("Template", "WindowsFontCache"); // since 5.46.3 open by driver
+		InsertText("Template", "qWave");
+	}
+
+	if (cfglvl < 8)
+	{
+		// templates L8
+		InsertText("Template", "FileCopy");
+		InsertText("Template", "SkipHook");
+	}
 	
+	if (cfglvl < 9)
+	{
+		// fix the unfortunate typo
+		if (GetTextList("Template", false).contains("FileCppy"))
+		{
+			InsertText("Template", "FileCopy");
+			DelValue("Template", "FileCppy");
+		}
+
+		DelValue("Template", "WindowsFontCache");
+
+		// templates L9
+		if (GetBool("DropAdminRights", false) == false) 
+		{
+			// enable those templates only for non hardened boxes
+			InsertText("Template", "OpenBluetooth");
+		}
+	}
+
+	SetNum("ConfigLevel", 9);
 }
 
 CSandBox::~CSandBox()
@@ -77,9 +115,9 @@ void CSandBox::UpdateDetails()
 {
 }
 
-SB_STATUS CSandBox::RunStart(const QString& Command)
+SB_STATUS CSandBox::RunStart(const QString& Command, bool Elevated)
 {
-	return m_pAPI->RunStart(m_Name, Command);
+	return m_pAPI->RunStart(m_Name, Command, NULL, Elevated);
 }
 
 SB_STATUS CSandBox::RunSandboxed(const QString& Command)
@@ -90,6 +128,11 @@ SB_STATUS CSandBox::RunSandboxed(const QString& Command)
 SB_STATUS CSandBox::TerminateAll()
 {
 	return m_pAPI->TerminateAll(m_Name);
+}
+
+bool CSandBox::IsEmpty() const
+{
+	return !QDir(m_FilePath).exists();
 }
 
 SB_PROGRESS CSandBox::CleanBox()
@@ -149,9 +192,8 @@ void CSandBox::CleanBoxAsync(const CSbieProgressPtr& pProgress, const QStringLis
 
 SB_STATUS CSandBox::RenameBox(const QString& NewName)
 {
-	if (QDir(m_FilePath).exists())
+	if (!IsEmpty())
 		return SB_ERR(SB_RemNotEmpty);
-
 
 	SB_STATUS Status = CSbieAPI::ValidateName(NewName);
 	if (Status.IsError())
@@ -162,7 +204,7 @@ SB_STATUS CSandBox::RenameBox(const QString& NewName)
 
 SB_STATUS CSandBox::RemoveBox()
 {
-	if (QDir(m_FilePath).exists())
+	if (!IsEmpty())
 		return SB_ERR(SB_DelNotEmpty);
 
 	return RemoveSection();
@@ -214,6 +256,9 @@ SB_PROGRESS CSandBox::TakeSnapshot(const QString& Name)
 
 	if (m_pAPI->HasProcesses(m_Name))
 		return SB_ERR(SB_SnapIsRunning, OP_CONFIRM);
+
+	if (IsEmpty())
+		return SB_ERR(SB_SnapIsEmpty);
 
 	QStringList Snapshots = ini.childGroups();
 

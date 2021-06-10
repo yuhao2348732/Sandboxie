@@ -196,7 +196,6 @@ _FX BOOLEAN Gui_InitProcess(PROCESS *proc)
         }
     }
 
-	//if (Conf_Get_Boolean(proc->box->name, L"OpenDefaultWinClass", 0, TRUE)) // ToDo: can we do that
     if (ok) {
         BOOLEAN AddMSTaskSwWClass = FALSE;
         if (Driver_OsVersion >= DRIVER_WINDOWS_7) {
@@ -314,6 +313,8 @@ _FX GUI_CLIPBOARD *Gui_GetClipboard(void)
     // In windows 10 find the offset in win32kfull!FindClipFormat
 
     ULONG Clipboard_Offset = 0;
+
+    // Hard Offset Dependency
 
 #ifdef _WIN64
     if (Driver_OsVersion <= DRIVER_WINDOWS_7) {

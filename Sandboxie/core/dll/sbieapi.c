@@ -632,6 +632,19 @@ _FX ULONG64 SbieApi_QueryProcessInfo(
     HANDLE ProcessId,
     ULONG info_type)
 {
+    return SbieApi_QueryProcessInfoEx(ProcessId, info_type, 0);
+}
+
+//---------------------------------------------------------------------------
+// SbieApi_QueryProcessInfoEx
+//---------------------------------------------------------------------------
+
+
+_FX ULONG64 SbieApi_QueryProcessInfoEx(
+    HANDLE ProcessId,
+    ULONG info_type,
+    ULONG64 ext_data)
+{
     NTSTATUS status;
     __declspec(align(8)) ULONG64 ResultValue;
     __declspec(align(8)) ULONG64 parms[API_NUM_ARGS];
@@ -643,6 +656,7 @@ _FX ULONG64 SbieApi_QueryProcessInfo(
     args->process_id.val64      = (ULONG64)(ULONG_PTR)ProcessId;
     args->info_type.val64       = (ULONG64)(ULONG_PTR)info_type;
     args->info_data.val64       = (ULONG64)(ULONG_PTR)&ResultValue;
+    args->ext_data.val64        = (ULONG64)(ULONG_PTR)ext_data;
 
     status = SbieApi_Ioctl(parms);
 
@@ -821,16 +835,19 @@ _FX LONG SbieApi_EnumProcessEx(
     const WCHAR *box_name,          // WCHAR [34]
     BOOLEAN all_sessions,
     ULONG which_session,            // -1 for current session
-    ULONG *boxed_pids)              // ULONG [512]
+    ULONG *boxed_pids,              // ULONG [512]
+    ULONG *boxed_count)
 {
     NTSTATUS status;
     __declspec(align(8)) ULONG64 parms[API_NUM_ARGS];
 
+    memset(parms, 0, sizeof(parms));
     parms[0] = API_ENUM_PROCESSES;
     parms[1] = (ULONG64)(ULONG_PTR)boxed_pids;
     parms[2] = (ULONG64)(ULONG_PTR)box_name;
     parms[3] = (ULONG64)(ULONG_PTR)all_sessions;
     parms[4] = (ULONG64)(LONG_PTR)which_session;
+    parms[5] = (ULONG64)(LONG_PTR)boxed_count;
     status = SbieApi_Ioctl(parms);
 
     if (! NT_SUCCESS(status))
@@ -854,6 +871,7 @@ _FX LONG SbieApi_DisableForceProcess(
     API_DISABLE_FORCE_PROCESS_ARGS *args =
         (API_DISABLE_FORCE_PROCESS_ARGS *)parms;
 
+    memset(parms, 0, sizeof(parms));
     args->func_code               = API_DISABLE_FORCE_PROCESS;
     args->set_flag.val64          = (ULONG64)(ULONG_PTR)NewState;
     args->get_flag.val64          = (ULONG64)(ULONG_PTR)OldState;
@@ -878,6 +896,7 @@ _FX LONG SbieApi_DisableForceProcess(
     NTSTATUS status;
     __declspec(align(8)) ULONG64 parms[API_NUM_ARGS];
 
+    memset(parms, 0, sizeof(parms));
     parms[0] = API_HOOK_TRAMP;
     parms[1] = (ULONG64)(ULONG_PTR)Source;
     parms[2] = (ULONG64)(ULONG_PTR)Trampoline;
@@ -938,6 +957,7 @@ _FX LONG SbieApi_GetFileName(
     __declspec(align(8)) ULONG64 parms[API_NUM_ARGS];
     API_GET_FILE_NAME_ARGS *args = (API_GET_FILE_NAME_ARGS *)parms;
 
+    memset(parms, 0, sizeof(parms));
     args->func_code               = API_GET_FILE_NAME;
     args->handle.val64            = (ULONG64)(ULONG_PTR)FileHandle;
     args->name_len.val64          = (ULONG64)(ULONG_PTR)NameLen;
@@ -1165,6 +1185,7 @@ _FX LONG SbieApi_OpenDeviceMap(
     __declspec(align(8)) ULONG64 parms[API_NUM_ARGS];
     API_OPEN_DEVICE_MAP_ARGS *args = (API_OPEN_DEVICE_MAP_ARGS *)parms;
 
+    memset(parms, 0, sizeof(parms));
     args->func_code               = API_OPEN_DEVICE_MAP;
     args->handle.val64            = (ULONG64)(ULONG_PTR)&ResultHandle;
     status = SbieApi_Ioctl(parms);
@@ -1218,6 +1239,7 @@ _FX LONG SbieApi_ReloadConf(ULONG session_id)
     NTSTATUS status;
     __declspec(align(8)) ULONG64 parms[API_NUM_ARGS];
 
+    memset(parms, 0, sizeof(parms));
     parms[0] = API_RELOAD_CONF;
     parms[1] = session_id;
     status = SbieApi_Ioctl(parms);
@@ -1255,6 +1277,7 @@ _FX LONG SbieApi_QueryConf(
     Output.MaximumLength = (USHORT)buffer_len;
     Output.Buffer        = (ULONG64)(ULONG_PTR)out_buffer;
 
+    memset(parms, 0, sizeof(parms));
     parms[0] = API_QUERY_CONF;
     parms[1] = (ULONG64)(ULONG_PTR)x_section;
     parms[2] = (ULONG64)(ULONG_PTR)x_setting;
@@ -1285,9 +1308,9 @@ _FX BOOLEAN SbieApi_QueryConfBool(
     *value = L'\0';
     SbieApi_QueryConfAsIs(
                     section_name, setting_name, 0, value, sizeof(value));
-    if (*value == 'y' || *value == 'Y')
+    if (*value == L'y' || *value == L'Y')
         return TRUE;
-    if (*value == 'n' || *value == 'N')
+    if (*value == L'n' || *value == L'N')
         return FALSE;
     return def;
 }
@@ -1379,6 +1402,7 @@ _FX LONG SbieApi_MonitorControl(
     __declspec(align(8)) ULONG64 parms[API_NUM_ARGS];
     API_MONITOR_CONTROL_ARGS *args = (API_MONITOR_CONTROL_ARGS *)parms;
 
+    memset(parms, 0, sizeof(parms));
     args->func_code               = API_MONITOR_CONTROL;
     args->set_flag.val64          = (ULONG64)(ULONG_PTR)NewState;
     args->get_flag.val64          = (ULONG64)(ULONG_PTR)OldState;
@@ -1399,20 +1423,23 @@ _FX LONG SbieApi_MonitorControl(
 
 
 _FX LONG SbieApi_MonitorPut(
-    USHORT Type,
+    ULONG Type,
     const WCHAR *Name)
 {
-    NTSTATUS status;
-    __declspec(align(8)) ULONG64 parms[API_NUM_ARGS];
-    API_MONITOR_GET_PUT_ARGS *args = (API_MONITOR_GET_PUT_ARGS *)parms;
+    //NTSTATUS status;
+    //__declspec(align(8)) ULONG64 parms[API_NUM_ARGS];
+    //API_MONITOR_GET_PUT_ARGS *args = (API_MONITOR_GET_PUT_ARGS *)parms;
 
-    args->func_code               = API_MONITOR_PUT;
-    args->log_type.val64         = (ULONG64)(ULONG_PTR)&Type;
-    args->log_len.val64          = wcslen(Name) * sizeof(WCHAR);
-    args->log_ptr.val64          = (ULONG64)(ULONG_PTR)Name;
-    status = SbieApi_Ioctl(parms);
+    //memset(parms, 0, sizeof(parms));
+    //args->func_code               = API_MONITOR_PUT;
+    //args->log_type.val           = Type;
+    //args->log_len.val64          = wcslen(Name) * sizeof(WCHAR);
+    //args->log_ptr.val64          = (ULONG64)(ULONG_PTR)Name;
+    //status = SbieApi_Ioctl(parms);
 
-    return status;
+    //return status;
+
+    return SbieApi_MonitorPut2(Type, Name, TRUE);
 }
 
 //---------------------------------------------------------------------------
@@ -1421,7 +1448,7 @@ _FX LONG SbieApi_MonitorPut(
 
 
 _FX LONG SbieApi_MonitorPut2(
-    USHORT Type,
+    ULONG Type,
     const WCHAR *Name,
     BOOLEAN bCheckObjectExists)
 {
@@ -1429,10 +1456,11 @@ _FX LONG SbieApi_MonitorPut2(
     __declspec(align(8)) ULONG64 parms[API_NUM_ARGS];
     API_MONITOR_PUT2_ARGS *args = (API_MONITOR_PUT2_ARGS *)parms;
 
+    memset(parms, 0, sizeof(parms));
     args->func_code                 = API_MONITOR_PUT2;
-    args->log_type.val64           = (ULONG64)(ULONG_PTR)&Type;
-    args->log_len.val64            = wcslen(Name) * sizeof(WCHAR);
-    args->log_ptr.val64            = (ULONG64)(ULONG_PTR)Name;
+    args->log_type.val              = Type;
+    args->log_len.val64             = wcslen(Name) * sizeof(WCHAR);
+    args->log_ptr.val64             = (ULONG64)(ULONG_PTR)Name;
     args->check_object_exists.val64 = bCheckObjectExists;
     status = SbieApi_Ioctl(parms);
 
@@ -1445,29 +1473,30 @@ _FX LONG SbieApi_MonitorPut2(
 //---------------------------------------------------------------------------
 
 
-_FX LONG SbieApi_MonitorGet(
-    USHORT *Type,
-    WCHAR *Name)                    // WCHAR [256]
-{
-    NTSTATUS status;
-    __declspec(align(8)) ULONG64 parms[API_NUM_ARGS];
-    API_MONITOR_GET_PUT_ARGS *args = (API_MONITOR_GET_PUT_ARGS *)parms;
-
-    args->func_code               = API_MONITOR_GET;
-    args->log_type.val64         = (ULONG64)(ULONG_PTR)Type;
-    args->log_len.val64          = 256 * sizeof(WCHAR);
-    args->log_ptr.val64          = (ULONG64)(ULONG_PTR)Name;
-    status = SbieApi_Ioctl(parms);
-
-    if (! NT_SUCCESS(status)) {
-        if (Type)
-            *Type = 0;
-        if (Name)
-            *Name = L'\0';
-    }
-
-    return status;
-}
+//_FX LONG SbieApi_MonitorGet(
+//    ULONG *Type,
+//    WCHAR *Name)                    // WCHAR [256]
+//{
+//    NTSTATUS status;
+//    __declspec(align(8)) ULONG64 parms[API_NUM_ARGS];
+//    API_MONITOR_GET_PUT_ARGS *args = (API_MONITOR_GET_PUT_ARGS *)parms;
+//
+//    memset(parms, 0, sizeof(parms));
+//    args->func_code               = API_MONITOR_GET;
+//    args->log_type.val64         = (ULONG64)(ULONG_PTR)Type;
+//    args->log_len.val64          = 256 * sizeof(WCHAR);
+//    args->log_ptr.val64          = (ULONG64)(ULONG_PTR)Name;
+//    status = SbieApi_Ioctl(parms);
+//
+//    if (! NT_SUCCESS(status)) {
+//        if (Type)
+//            *Type = 0;
+//        if (Name)
+//            *Name = L'\0';
+//    }
+//
+//    return status;
+//}
 
 
 //---------------------------------------------------------------------------
@@ -1477,20 +1506,23 @@ _FX LONG SbieApi_MonitorGet(
 
 _FX LONG SbieApi_MonitorGetEx(
 	ULONG *SeqNum,
-	USHORT *Type,
-	ULONG64 *Pid,
+	ULONG *Type,
+	ULONG *Pid,
+    ULONG *Tid,
 	WCHAR *Name)                    // WCHAR [256]
 {
 	NTSTATUS status;
+    __declspec(align(8)) UNICODE_STRING64 log_buffer = { 0, (USHORT)(256 * sizeof(WCHAR)), (ULONG64)Name };
 	__declspec(align(8)) ULONG64 parms[API_NUM_ARGS];
 	API_MONITOR_GET_EX_ARGS *args = (API_MONITOR_GET_EX_ARGS *)parms;
 
+    memset(parms, 0, sizeof(parms));
 	args->func_code = API_MONITOR_GET_EX;
-	args->log_seq.val64 = (ULONG64)(ULONG_PTR)SeqNum;
-	args->log_type.val64 = (ULONG64)(ULONG_PTR)Type;
-	args->log_pid.val64 = (ULONG64)(ULONG_PTR)Pid;
-	args->log_len.val64 = 256 * sizeof(WCHAR);
-	args->log_ptr.val64 = (ULONG64)(ULONG_PTR)Name;
+	args->log_seq.val = SeqNum;
+	args->log_type.val = Type;
+	args->log_pid.val = Pid;
+    args->log_tid.val = Tid;
+    args->log_data.val = &log_buffer;
 	status = SbieApi_Ioctl(parms);
 
 	if (!NT_SUCCESS(status)) {
@@ -1516,6 +1548,7 @@ _FX LONG SbieApi_GetUnmountHive(
     __declspec(align(8)) ULONG64 parms[API_NUM_ARGS];
     API_GET_UNMOUNT_HIVE_ARGS *args = (API_GET_UNMOUNT_HIVE_ARGS *)parms;
 
+    memset(parms, 0, sizeof(parms));
     args->func_code               = API_GET_UNMOUNT_HIVE;
     args->path.val64              = (ULONG64)(ULONG_PTR)path;
     status = SbieApi_Ioctl(parms);
@@ -1541,6 +1574,7 @@ _FX LONG SbieApi_SessionLeader(HANDLE TokenHandle, HANDLE *ProcessId)
     __declspec(align(8)) ULONG64 parms[API_NUM_ARGS];
     API_SESSION_LEADER_ARGS *args = (API_SESSION_LEADER_ARGS *)parms;
 
+    memset(parms, 0, sizeof(parms));
     args->func_code               = API_SESSION_LEADER;
     if (ProcessId) {
         args->token_handle.val64  = (ULONG64)(ULONG_PTR)TokenHandle;

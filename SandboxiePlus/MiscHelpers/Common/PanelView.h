@@ -13,6 +13,10 @@ public:
 	static void					SetMaxCellWidth(int iMaxWidth) { m_MaxCellWidth = iMaxWidth; }
 	static void					SetCellSeparator(const QString& Sep) { m_CellSeparator = Sep; }
 
+	static QString				m_CopyCell;
+	static QString				m_CopyRow;
+	static QString				m_CopyPanel;
+
 protected slots:
 	virtual void				OnMenu(const QPoint& Point);
 
@@ -81,6 +85,8 @@ public:
 	virtual QTreeView*			GetView()	{ return m_pTreeList; }
 	virtual QAbstractItemModel* GetModel()	{ return m_pTreeList->model(); }
 
+	virtual QVBoxLayout*		GetLayout()	{ return m_pMainLayout; }
+
 protected:
 	QVBoxLayout*			m_pMainLayout;
 
@@ -148,12 +154,15 @@ public:
 		m_pSortProxy->setDynamicSortFilter(true);
 
 		m_pTreeList->setModel(m_pSortProxy);
+		((CSortFilterProxyModel*)m_pSortProxy)->setView(m_pTreeList);
+		
 
 		m_pTreeList->setSelectionMode(QAbstractItemView::ExtendedSelection);
 #ifdef WIN32
 		QStyle* pStyle = QStyleFactory::create("windows");
 		m_pTreeList->setStyle(pStyle);
 #endif
+		m_pTreeList->setExpandsOnDoubleClick(false);
 		m_pTreeList->setSortingEnabled(true);
 
 		m_pTreeList->setContextMenuPolicy(Qt::CustomContextMenu);

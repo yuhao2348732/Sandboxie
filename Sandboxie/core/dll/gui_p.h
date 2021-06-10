@@ -454,6 +454,8 @@ extern BOOLEAN Gui_RenameClasses;
 extern BOOLEAN Gui_OpenAllWinClasses;   // not running in a restricted job
 
 extern BOOLEAN Gui_DisableTitle;
+extern ULONG Gui_BoxNameTitleLen;
+extern WCHAR* Gui_BoxNameTitleW;
 
 extern ATOM Gui_DropTargetProp_Atom;
 extern ATOM Gui_WindowProcOldW_Atom;
@@ -818,7 +820,9 @@ BOOLEAN Gui_InitMsg(void);
 
 BOOLEAN Gui_InitWinHooks(void);
 
-LRESULT Gui_ApplyWinHooks(ULONG_PTR idThread);
+LRESULT Gui_RegisterWinHook(DWORD dwThreadId, ULONG64 ghk);
+
+LRESULT Gui_NotifyWinHooks(void);
 
 
 //---------------------------------------------------------------------------

@@ -6,6 +6,8 @@
 
 #include "winres.h"
 
+#include "../version.h"
+
 #if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_DEA)
 LANGUAGE LANG_GERMAN, SUBLANG_GERMAN_AUSTRIAN
 #pragma code_page(1252)
@@ -17,7 +19,7 @@ LANGUAGE LANG_GERMAN, SUBLANG_GERMAN_AUSTRIAN
 
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
-IDI_ICON1               ICON                    ".\\Resources\\SandMan.ico"
+IDI_ICON1               ICON                    "./resources/SandMan.ico"
 
 
 #ifdef APSTUDIO_INVOKED
@@ -47,12 +49,30 @@ END
 
 /////////////////////////////////////////////////////////////////////////////
 //
+// Bitmap
+//
+
+FINDER_FULL             BITMAP                  "./resources/finder-full.bmp"
+
+FINDER_EMPTY            BITMAP                  "./resources/finder-empty.bmp"
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Cursor
+//
+
+FINDER_CURSOR           CURSOR                  "./resources/finder.cur"
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
 // Version
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,0,0,1
- PRODUCTVERSION 1,0,0,1
+ FILEVERSION VERSION_BIN
+ PRODUCTVERSION VERSION_BIN
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -67,14 +87,14 @@ BEGIN
     BEGIN
         BLOCK "0c0704b0"
         BEGIN
-            //VALUE "CompanyName", "xanasoft.net"
+            VALUE "CompanyName", MY_COMPANY_NAME_STRING
             VALUE "FileDescription", "SandBox Manager"
-            VALUE "FileVersion", "1.0.0.1"
+            VALUE "FileVersion", VERSION_STR
             VALUE "InternalName", "SandMan.exe"
-            VALUE "LegalCopyright", "Copyright (C) 2020 by DavidXanatos"
+            VALUE "LegalCopyright", MY_COPYRIGHT_STRING
             VALUE "OriginalFilename", "SandMan.exe"
-            VALUE "ProductName", "SandBox Manager"
-            VALUE "ProductVersion", "1.0.0.1"
+            VALUE "ProductName", MY_PRODUCT_NAME_STRING
+            VALUE "ProductVersion", VERSION_STR
         END
     END
     BLOCK "VarFileInfo"

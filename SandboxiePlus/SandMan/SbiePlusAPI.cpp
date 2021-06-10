@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "SbiePlusAPI.h"
 #include "..\MiscHelpers\Common\Common.h"
-
+#include <windows.h>
 
 CSbiePlusAPI::CSbiePlusAPI(QObject* parent) : CSbieAPI(parent)
 {
@@ -31,6 +31,40 @@ CBoxedProcessPtr CSbiePlusAPI::OnProcessBoxed(quint32 ProcessId, const QString& 
 	return pProcess;
 }
 
+BOOL CALLBACK CSbiePlusAPI__WindowEnum(HWND hwnd, LPARAM lParam)
+{
+	if (GetParent(hwnd) || GetWindow(hwnd, GW_OWNER))
+		return TRUE;
+	ULONG style = GetWindowLong(hwnd, GWL_STYLE);
+	if ((style & (WS_CAPTION | WS_SYSMENU)) != (WS_CAPTION | WS_SYSMENU))
+		return TRUE;
+	if (!IsWindowVisible(hwnd))
+		return TRUE;
+	/*
+	if ((style & WS_OVERLAPPEDWINDOW) != WS_OVERLAPPEDWINDOW &&
+		(style & WS_POPUPWINDOW)      != WS_POPUPWINDOW)
+		return TRUE;
+	*/
+
+	ULONG pid;
+	GetWindowThreadProcessId(hwnd, &pid);
+
+	QMultiMap<quint32, QString>& m_WindowMap = *((QMultiMap<quint32, QString>*)(lParam));
+
+	WCHAR title[256];
+	GetWindowTextW(hwnd, title, 256);
+
+	m_WindowMap.insert(pid, QString::fromWCharArray(title));
+
+	return TRUE;
+}
+
+void CSbiePlusAPI::UpdateWindowMap()
+{
+	m_WindowMap.clear();
+	EnumWindows(CSbiePlusAPI__WindowEnum, (LPARAM)&m_WindowMap);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // CSandBoxPlus
 //
@@ -55,7 +89,16 @@ CSandBoxPlus::~CSandBoxPlus()
 
 void CSandBoxPlus::UpdateDetails()
 {
-	m_bLogApiFound = GetTextList("OpenPipePath", false).contains("\\Device\\NamedPipe\\LogAPI");
+	//m_bLogApiFound = GetTextList("OpenPipePath", false).contains("\\Device\\NamedPipe\\LogAPI");
+	m_bLogApiFound = false;
+	QStringList InjectDlls = GetTextList("InjectDll", false);
+	foreach(const QString & InjectDll, InjectDlls)
+	{
+		if (InjectDll.contains("logapi", Qt::CaseInsensitive)) {
+			m_bLogApiFound = true;
+			break;
+		}
+	}
 
 	m_bINetBlocked = false;
 	foreach(const QString& Entry, GetTextList("ClosedFilePath", false))
@@ -70,16 +113,16 @@ void CSandBoxPlus::UpdateDetails()
 
 	m_bDropRights = GetBool("DropAdminRights", false);
 
-	if (CheckOpenToken())
+	if (CheckOpenToken() || GetBool("StripSystemPrivileges", false))
 		m_iUnsecureDebugging = 1;
-	else if(GetBool("ExposeBoxedSystem", false) || GetBool("UnrestrictedSCM", false))
+	else if(GetBool("ExposeBoxedSystem", false) || GetBool("UnrestrictedSCM", false) /*|| GetBool("RunServicesAsSystem", false)*/)
 		m_iUnsecureDebugging = 2;
 	else
 		m_iUnsecureDebugging = 0;
 
 	//GetBool("SandboxieLogon", false)
 
-	m_bSecurityRestricted = m_iUnsecureDebugging == 0 && (GetBool("DropAdminRights", false) || GetBool("ProtectRpcSs", false));
+	m_bSecurityRestricted = m_iUnsecureDebugging == 0 && (GetBool("DropAdminRights", false));
 
 	CSandBox::UpdateDetails();
 }
@@ -93,7 +136,13 @@ void CSandBoxPlus::CloseBox()
 
 QString CSandBoxPlus::GetStatusStr() const
 {
+	if (!m_IsEnabled)
+		return tr("Disabled");
+
 	QStringList Status;
+
+	if (IsEmpty())
+		Status.append(tr("Empty"));
 
 	if (m_iUnsecureDebugging == 1)
 		Status.append(tr("NOT SECURE (Debug Config)"));
@@ -131,16 +180,17 @@ void CSandBoxPlus::SetLogApi(bool bEnable)
 {
 	if (bEnable)
 	{
-		InsertText("OpenPipePath", "\\Device\\NamedPipe\\LogAPI");
+		//InsertText("OpenPipePath", "\\Device\\NamedPipe\\LogAPI");
 		InsertText("InjectDll", "\\LogAPI\\logapi32.dll");
 		InsertText("InjectDll64", "\\LogAPI\\logapi64.dll");
 	}
 	else
 	{
-		DelValue("OpenPipePath", "\\Device\\NamedPipe\\LogAPI");
+		//DelValue("OpenPipePath", "\\Device\\NamedPipe\\LogAPI");
 		DelValue("InjectDll", "\\LogAPI\\logapi32.dll");
 		DelValue("InjectDll64", "\\LogAPI\\logapi64.dll");
 	}
+	m_bLogApiFound = bEnable;
 }
 
 void CSandBoxPlus::SetINetBlock(bool bEnable)

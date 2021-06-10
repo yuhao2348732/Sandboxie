@@ -4,7 +4,7 @@
 #include "ui_OptionsWindow.h"
 #include "SbiePlusAPI.h"
 
-class COptionsWindow : public QMainWindow
+class COptionsWindow : public QDialog
 {
 	Q_OBJECT
 
@@ -12,13 +12,16 @@ public:
 	COptionsWindow(const QSharedPointer<CSbieIni>& pBox, const QString& Name, QWidget *parent = Q_NULLPTR);
 	~COptionsWindow();
 
+	virtual void accept() {}
+	virtual void reject();
+
 signals:
 	void OptionsChanged();
+	void Closed();
 
 public slots:
+	void ok();
 	void apply();
-	void accept();
-	void reject();
 
 private slots:
 
@@ -29,6 +32,11 @@ private slots:
 	void OnBrowsePath();
 	void OnAddCommand();
 	void OnDelCommand();
+
+	void OnAddAutoCmd();
+	void OnAddAutoExe();
+	void OnDelAutoSvc();
+	void OnDelAuto();
 
 	void OnAddGroup();
 	void OnAddProg();
@@ -72,6 +80,9 @@ private slots:
 	void OnDelRecEntry();
 	void OnShowRecoveryTmpl()		{ LoadRecoveryList(); }
 
+	void OnAddAutoExec();
+	void OnDelAutoExec();
+
 	void OnAddProcess();
 	void OnDelProcess();
 
@@ -83,6 +94,10 @@ private slots:
 	void OnFilterTemplates()		{ ShowTemplates(); }
 	void OnTemplateClicked(QTreeWidgetItem* pItem, int Column);
 	void OnTemplateDoubleClicked(QTreeWidgetItem* pItem, int Column);
+	void OnAddTemplates();
+	void OnDelTemplates();
+	void OnFolderChanged();
+	void OnScreenReaders();
 
 	void OnTab();
 
@@ -163,6 +178,8 @@ protected:
 	void LoadConfig();
 	void SaveConfig();
 
+	void AddAutoRunItem(const QString& Value, int Type);
+
 	void AddRunItem(const QString& Name, const QString& Command);
 
 	void LoadGroups();
@@ -198,6 +215,10 @@ protected:
 	void ShowTemplates();
 	void SaveTemplates();
 
+	void LoadFolders();
+	void ShowFolders();
+	void SaveFolders();
+
 	void LoadIniSection();
 	void SaveIniSection();
 
@@ -213,6 +234,7 @@ protected:
 	bool m_INetBlockChanged;
 	bool m_AccessChanged;
 	bool m_TemplatesChanged;
+	bool m_FoldersChanged;
 	bool m_RecoveryChanged;
 	bool m_AdvancedChanged;
 
@@ -223,6 +245,7 @@ protected:
 	QMultiMap<QString, QPair<QString, QString>> m_AllTemplates;
 	QStringList m_GlobalTemplates;
 	QStringList m_BoxTemplates;
+	QStringList m_BoxFolders;
 
 	QList<QPair<QString, QString>> m_Settings;
 

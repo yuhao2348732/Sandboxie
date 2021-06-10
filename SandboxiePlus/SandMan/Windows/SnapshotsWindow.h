@@ -5,7 +5,7 @@
 #include "SbiePlusAPI.h"
 class CSimpleTreeModel;
 
-class CSnapshotsWindow : public QMainWindow
+class CSnapshotsWindow : public QDialog
 {
 	Q_OBJECT
 
@@ -13,8 +13,14 @@ public:
 	CSnapshotsWindow(const CSandBoxPtr& pBox, QWidget *parent = Q_NULLPTR);
 	~CSnapshotsWindow();
 
+	virtual void accept() {}
+	virtual void reject() { this->close(); }
+
+signals:
+	void Closed();
+
 private slots:
-	void UpdateSnapshots();
+	void UpdateSnapshots(bool AndSelect = false);
 	void UpdateSnapshot(const QModelIndex& Index);
 
 	void SaveInfo();

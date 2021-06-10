@@ -2189,6 +2189,12 @@ __declspec(dllimport) NTSTATUS __stdcall NtPrivilegeCheck(
 
 typedef NTSTATUS (*P_RtlQueryElevationFlags)(ULONG *Flags);
 
+typedef NTSTATUS (*P_RtlCheckTokenMembershipEx)(
+    HANDLE tokenHandle,
+    PSID sidToCheck,
+    DWORD flags,
+    PBOOL isMember);
+
 __declspec(dllimport) NTSTATUS RtlQueryElevationFlags(ULONG *Flags);
 
 __declspec(dllimport) NTSTATUS __stdcall NtContinue(
@@ -2375,6 +2381,19 @@ __declspec(dllimport) ULONG __stdcall
 RtlNtStatusToDosError(NTSTATUS Status);
 
 __declspec(dllimport) void __stdcall RtlRaiseStatus(NTSTATUS Status);
+
+__declspec(dllimport) PULONG __stdcall
+RtlSubAuthoritySid(
+    _In_ PSID Sid,
+    _In_ ULONG SubAuthority
+    );
+
+__declspec(dllimport) NTSTATUS __stdcall
+RtlInitializeSid(
+    _Out_ PSID Sid,
+    _In_ PSID_IDENTIFIER_AUTHORITY IdentifierAuthority,
+    _In_ UCHAR SubAuthorityCount
+    );
 
 //---------------------------------------------------------------------------
 

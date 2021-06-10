@@ -148,7 +148,7 @@
     </QtMoc>
     <ClCompile>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <DebugInformationFormat />
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
       <PrecompiledHeader>Use</PrecompiledHeader>
@@ -160,7 +160,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <OutputFile>$(OutDir)\$(ProjectName).dll</OutputFile>
-      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>ntdll.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
@@ -170,8 +170,7 @@
     </QtMoc>
     <ClCompile>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <DebugInformationFormat>
-      </DebugInformationFormat>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
       <PrecompiledHeader>Use</PrecompiledHeader>
@@ -183,7 +182,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <OutputFile>$(OutDir)\$(ProjectName).dll</OutputFile>
-      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
       <TargetMachine>MachineX86</TargetMachine>
       <AdditionalOptions> /SUBSYSTEM:WINDOWS</AdditionalOptions>
       <AdditionalDependencies>ntdll.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -197,6 +196,7 @@
     <ClCompile Include="Sandboxie\SbieIni.cpp" />
     <ClCompile Include="Sandboxie\SbieTemplates.cpp" />
     <ClCompile Include="SbieAPI.cpp" />
+    <ClCompile Include="SbieTrace.cpp" />
     <ClCompile Include="SbieUtils.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
@@ -215,10 +215,15 @@
     <QtMoc Include="Sandboxie\SbieIni.h" />
     <QtMoc Include="Sandboxie\BoxBorder.h" />
     <QtMoc Include="Sandboxie\SbieTemplates.h" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="SbieDefs.h" />
     <QtMoc Include="SbieStatus.h" />
+    <ClInclude Include="SbieTrace.h" />
     <ClInclude Include="SbieUtils.h" />
     <ClInclude Include="stdafx.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="QSbieAPI.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">
